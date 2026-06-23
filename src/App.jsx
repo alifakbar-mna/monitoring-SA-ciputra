@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { supabase, fetchGoogleCalendarEvents } from "./supabase";
 import Navbar from "./components/Navbar";
 import Dashboard from "./pages/Dashboard";
@@ -15,9 +15,8 @@ function App() {
   const [staffList, setStaffList] = useState([]); 
   const [activities, setActivities] = useState([]); 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true); // State loading untuk mengecek auth awal
+  const [isLoading, setIsLoading] = useState(true); 
 
-  // Info bulan dan tahun saat ini secara otomatis
   const currentLocalDate = new Date();
   const currentMonth = currentLocalDate.getMonth() + 1; 
   const currentYear = currentLocalDate.getFullYear();
@@ -48,7 +47,7 @@ function App() {
       const providerToken = currentSession?.provider_token;
       let { data: allStaff } = await supabase.from("staff").select("email, name, campus");
       
-      // Sinkronisasi Google Calendar (Wajib menggunakan Sync Login agar token ini ada)
+      // Sinkronisasi Google Calendar
       if (providerToken && allStaff) {
         let allGCalEvents = [];
 
@@ -69,6 +68,7 @@ function App() {
                 const end = event.end?.dateTime || event.end?.date;
                 if (!start) return null;
 
+                // FIXED: Menghapus properti campus agar tidak dikirim ke tabel activities
                 return {
                   staff_name: staff.name,
                   title: event.summary || "No Title",
@@ -77,8 +77,7 @@ function App() {
                   start_time: start.includes("T") ? start.split("T")[1].substring(0, 5) : "08:00",
                   end_time: end.includes("T") ? end.split("T")[1].substring(0, 5) : "17:00",
                   source: "google_calendar",
-                  gcal_event_id: event.id,
-                  campus: staff.campus
+                  gcal_event_id: event.id
                 };
               }).filter(Boolean);
 
@@ -92,7 +91,6 @@ function App() {
         const existingGCalIds = new Set(localActs.map(act => act.gcal_event_id).filter(Boolean));
         const filteredNewEvents = allGCalEvents.filter(gAct => !existingGCalIds.has(gAct.gcal_event_id));
 
-        // Bersihkan duplikasi internal gcal_event_id sebelum dikirim
         const uniqueEventsMap = new Map();
         filteredNewEvents.forEach(event => {
           if (event.gcal_event_id) uniqueEventsMap.set(event.gcal_event_id, event);
@@ -135,14 +133,12 @@ function App() {
         fetchStaff();
         fetchAllActivities(loggedInUser, currentSession);
 
-        // Arahkan halaman awal berdasarkan role setelah login sukses
         if (loggedInUser.role === "admin") {
           setCurrentPage("all_activity");
         } else {
           setCurrentPage("my_activity");
         }
       } else {
-        // Jika email Google tidak terdaftar di tabel staff, tendang keluar
         alert("Akses ditolak. Email Google Anda belum didaftarkan oleh Admin.");
         await supabase.auth.signOut();
         setCurrentUser(null);
@@ -223,7 +219,6 @@ function App() {
     }
   };
 
-  // Fungsi Utama Login Google OAuth
   const handleGoogleLogin = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
