@@ -26,7 +26,6 @@ export default async function handler(req, res) {
             ATURAN PENULISAN TO-DO LIST (PENTING):
             - Kolom "title" (Judul): Harus singkat, padat, berupa poin utama aksi, dan TIDAK BOLEH terlalu panjang (Contoh: "Briefing Ketua Ormawa", "Review Proposal Pemilu", "Koordinasi Dana Pagu").
             - Kolom "description" (Deskripsi): Gunakan kolom ini untuk menjelaskan detail teknis pengerjaan, rincian instruksi, atau poin-poin yang perlu diperiksa agar judul tetap bersih.
-            - Kolom "priority": Tentukan secara otomatis nilainya antara "normal" atau "urgent" berdasarkan urgensi konteks obrolan.
             - Kolom "is_completed": Selalu set nilainya menjadi false secara default untuk semua tugas baru.
             - Kolom waktu wajib menggunakan format "HH:MM" (24 jam).
 
@@ -37,7 +36,6 @@ export default async function handler(req, res) {
                 "title": "Review Proposal Ormawa",
                 "start_time": "09:00",
                 "end_time": "10:30",
-                "priority": "urgent",
                 "is_completed": false,
                 "description": "Memeriksa lembar pengesahan, rincian anggaran biaya (RAB), dan timeline event milik BEM & HMPS."
               },
@@ -45,7 +43,6 @@ export default async function handler(req, res) {
                 "title": "Koordinasi Dana Pagu",
                 "start_time": "13:00",
                 "end_time": "14:30",
-                "priority": "normal",
                 "is_completed": false,
                 "description": "Pertemuan dengan perwakilan himpunan di ruang Student Affairs untuk membahas sisa kuota dana kegiatan semester ini."
               }

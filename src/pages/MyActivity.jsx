@@ -76,7 +76,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
           activity_date: targetDate,
           start_time: item.start_time || "08:00",
           end_time: item.end_time || "09:00",
-          priority: item.priority || "normal",                // Menangkap prioritas otomatis dari Gemini
           is_completed: item.is_completed ?? false,          // Menangkap status completion default dari Gemini
           source: "manual",
           description: item.description || "Dibuat otomatis oleh Asisten Gemini AI." // Deskripsi detail dari Gemini
