@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { supabase } from "../supabase";
 
-export default function MyActivity({ activities, selectedStaff, currentMonth, currentYear, onOpenAddModal }) {
+export default function MyActivity({ activities, selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity }) {
   // State untuk Asisten AI Gemini
   const [inputMessage, setInputMessage] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
@@ -24,6 +24,18 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
   };
 
   const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+
+  // Fungsi Toggle Complete langsung dari komponen Card List jika diperlukan
+  const handleToggleCardComplete = async (activityId, currentStatus) => {
+    const { error } = await supabase
+      .from("activities")
+      .update({ is_completed: !currentStatus })
+      .eq("id", activityId);
+
+    if (!error && onUpdateActivity) {
+      onUpdateActivity();
+    }
+  };
 
   // Fungsi untuk mengirim pesan chat ke Serverless Function /api/generate-todo di Vercel
   const handleSendAiMessage = async () => {
@@ -51,22 +63,24 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
         const jsonString = data.text.match(/<DATA>([\s\S]*?)<\/DATA>/)[1].trim();
         const todoItems = JSON.parse(jsonString);
 
-        // Map data agar sesuai skema tabel 'activities' Supabase Anda
+        // Map data agar sesuai skema tabel 'activities' Supabase yang sudah di-update
         const insertData = todoItems.map(item => ({
           staff_name: selectedStaff,
           title: item.title,
           activity_date: targetDate,
           start_time: item.start_time || "08:00",
           end_time: item.end_time || "09:00",
-          priority: "normal",
+          priority: item.priority || "normal",                // Menangkap prioritas otomatis dari Gemini
+          is_completed: item.is_completed ?? false,          // Menangkap status completion default dari Gemini
           source: "manual",
-          description: "Dibuat otomatis oleh Asisten Gemini AI."
+          description: item.description || "Dibuat otomatis oleh Asisten Gemini AI." // Deskripsi detail dari Gemini
         }));
 
         const { error } = await supabase.from("activities").insert(insertData);
         if (!error) {
           alert(`🎉 Sukses! ${todoItems.length} To-Do List berhasil disimpan ke database.`);
           setChatHistory([]); // Reset obrolan setelah sukses dimasukkan
+          if (onUpdateActivity) onUpdateActivity(); // Trigger fetch ulang data agar langsung muncul di sisi kanan
         } else {
           console.error("Gagal menyimpan ke Supabase:", error);
         }
@@ -151,7 +165,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
                   backgroundColor: chat.role === "user" ? "#0071e3" : "#e5e5ea", 
                   color: chat.role === "user" ? "#fff" : "#000" 
                 }}>
-                  {/* Menyembunyikan tag XML/JSON tersembunyi dari pandangan mata user */}
                   {chat.parts[0].text.replace(/<DATA>[\s\S]*?<\/DATA>/g, "").trim()}
                 </div>
               </div>
@@ -189,28 +202,73 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "20px" }}>
               {filteredActivities.map(act => (
-                <div key={act.id} className="glass-panel" style={{ padding: "20px", position: "relative", backgroundColor: "#fff", borderRadius: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.01)" }}>
+                <div 
+                  key={act.id} 
+                  className="glass-panel" 
+                  style={{ 
+                    padding: "20px", 
+                    position: "relative", 
+                    backgroundColor: "#fff", 
+                    borderRadius: "14px", 
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.01)",
+                    border: act.is_completed ? "1px solid #d2d2d7" : "1px solid transparent",
+                    opacity: act.is_completed ? 0.65 : 1,
+                    transition: "all 0.2s ease"
+                  }}
+                >
+                  {/* Badge Priority */}
                   <span style={{
                     position: "absolute", top: "20px", right: "20px", fontSize: "11px", fontWeight: 700,
                     padding: "4px 8px", borderRadius: "20px", textTransform: "uppercase",
-                    backgroundColor: act.priority === "urgent" ? "rgba(255,59,48,0.1)" : "rgba(0,0,0,0.05)",
-                    color: act.priority === "urgent" ? "var(--apple-red)" : "var(--apple-text-sub)"
+                    backgroundColor: act.is_completed ? "#f5f5f7" : (act.priority === "urgent" ? "rgba(255,59,48,0.1)" : "rgba(0,0,0,0.05)"),
+                    color: act.is_completed ? "#86868b" : (act.priority === "urgent" ? "var(--apple-red)" : "var(--apple-text-sub)"),
+                    textDecoration: act.is_completed ? "line-through" : "none"
                   }}>
-                    {act.priority || "normal"}
+                    {act.is_completed ? "Selesai" : (act.priority || "normal")}
                   </span>
 
-                  <div style={{ fontSize: "12px", color: "var(--apple-green)", fontWeight: 600, marginBottom: "4px" }}>
-                    🕒 {formatTime(act.start_time)} - {formatTime(act.end_time)}
+                  {/* Waktu Kegiatan */}
+                  <div 
+                    onClick={() => handleToggleCardComplete(act.id, act.is_completed)}
+                    style={{ 
+                      fontSize: "12px", 
+                      color: act.is_completed ? "#86868b" : "var(--apple-green)", 
+                      fontWeight: 600, 
+                      marginBottom: "6px",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px"
+                    }}
+                    title="Klik untuk mengubah status selesai"
+                  >
+                    {act.is_completed ? "✅" : "🕒"} {formatTime(act.start_time)} - {formatTime(act.end_time)}
                   </div>
 
-                  <h3 style={{ margin: "0 0 10px 0", fontSize: "17px", fontWeight: 600, paddingRight: "60px" }}>
+                  {/* Judul Kegiatan */}
+                  <h3 style={{ 
+                    margin: "0 0 10px 0", 
+                    fontSize: "17px", 
+                    fontWeight: 600, 
+                    paddingRight: "70px",
+                    textDecoration: act.is_completed ? "line-through" : "none",
+                    color: act.is_completed ? "#86868b" : "var(--apple-text-main)"
+                  }}>
                     {act.title}
                   </h3>
                   
-                  <p style={{ color: "#424245", fontSize: "13px", lineHeight: "1.4", marginBottom: "20px" }}>
+                  {/* Deskripsi Detail */}
+                  <p style={{ 
+                    color: act.is_completed ? "#86868b" : "#424245", 
+                    fontSize: "13px", 
+                    lineHeight: "1.4", 
+                    marginBottom: "20px",
+                    textDecoration: act.is_completed ? "line-through" : "none"
+                  }}>
                     {act.description || "Tidak ada deskripsi rinci."}
                   </p>
 
+                  {/* Footer Card */}
                   <div style={{ borderTop: "1px solid #e5e5ea", paddingTop: "12px", display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--apple-text-sub)" }}>
                     <div>
                       <strong>Tanggal:</strong> {act.activity_date || "-"}

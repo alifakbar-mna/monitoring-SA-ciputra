@@ -5,18 +5,21 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
   const [detailModal, setDetailModal] = useState({ isOpen: false, staffName: "", dateRaw: "", data: [] });
   const [dbStaffInfo, setDbStaffInfo] = useState([]); 
   const [visibleStaff, setVisibleStaff] = useState([]); 
-  const [filterCampus, setFilterCampus] = useState("Semua"); // <-- State filter kampus baru
+  const [filterCampus, setFilterCampus] = useState("Semua");
+
+  const loadStaffDetails = async () => {
+    const { data } = await supabase.from("staff").select("name, color, campus");
+    if (data) {
+      setDbStaffInfo(data);
+      // Hanya set centang default jika visibleStaff masih kosong (inisialisasi awal)
+      if (visibleStaff.length === 0) {
+        setVisibleStaff(data.map(s => s.name));
+      }
+    }
+  };
 
   useEffect(() => {
-    const fetchStaffDetails = async () => {
-      // PERBAIKAN: Mengambil data campus juga dari database
-      const { data } = await supabase.from("staff").select("name, color, campus");
-      if (data) {
-        setDbStaffInfo(data);
-        setVisibleStaff(data.map(s => s.name)); // Mengisi centang default awal
-      }
-    };
-    fetchStaffDetails();
+    loadStaffDetails();
   }, [staffList]);
 
   const staffColorMap = useMemo(() => {
@@ -25,14 +28,12 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
     return map;
   }, [dbStaffInfo]);
 
-  // Membuat mapping nama staff ke wilayah kampus mereka
   const staffCampusMap = useMemo(() => {
     const map = {};
     dbStaffInfo.forEach(s => { map[s.name] = s.campus || "Surabaya"; });
     return map;
   }, [dbStaffInfo]);
 
-  // Filter daftar checklist staff yang memenuhi kriteria kampus terpilih
   const allowedStaffByCampus = useMemo(() => {
     return dbStaffInfo.filter(s => {
       if (filterCampus === "Semua") return true;
@@ -40,7 +41,6 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
     });
   }, [dbStaffInfo, filterCampus]);
 
-  // Otomatis reset centang atau sesuaikan ketika filter kampus diubah
   useEffect(() => {
     if (filterCampus === "Semua") {
       setVisibleStaff(dbStaffInfo.map(s => s.name));
@@ -81,20 +81,76 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
     }
   };
 
+  // FUNGSI BARU: Mengubah Status Selesai / Belum Selesai ke Supabase
+  const handleToggleComplete = async (e, activityId, currentStatus) => {
+    e.stopPropagation(); // PENTING: Mencegah modal detail terbuka saat mencentang!
+    
+    const nextStatus = !currentStatus;
+
+    const { error } = await supabase
+      .from("activities")
+      .update({ is_completed: nextStatus })
+      .eq("id", activityId);
+
+    if (!error) {
+      // Trigger parent component untuk refresh data agar UI terupdate real-time
+      if (onUpdateActivity) onUpdateActivity();
+    } else {
+      console.error("Gagal memperbarui status tugas:", error);
+    }
+  };
+
   return (
     <div style={{ padding: "20px 40px" }}>
+      {/* GAYA CSS EMBEDDED UNTUK HOVER EFFECT CHECKBOX (APPLE STYLE) */}
+      <style>{`
+        .todo-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 13px;
+          padding: 3px 6px;
+          border-radius: 6px;
+          transition: background 0.2s ease;
+        }
+        .todo-row:hover {
+          background: rgba(0,0,0,0.03);
+        }
+        .apple-checkbox {
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          border: 1.5px solid #d2d2d7;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+          flex-shrink: 0;
+          opacity: 0; /* Tersembunyi default */
+          transform: scale(0.8);
+        }
+        /* Tampilkan checkbox bundar hanya saat baris tugas di-hover atau ketika sudah selesai */
+        .todo-row:hover .apple-checkbox, .apple-checkbox.checked {
+          opacity: 1;
+          transform: scale(1);
+        }
+        .apple-checkbox:hover {
+          border-color: #34c759 !important;
+          background: rgba(52, 199, 89, 0.1);
+        }
+      `}</style>
+
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <div>
           <h2 style={{ fontSize: "28px", fontWeight: 700, margin: 0 }}>All Activity Matrix</h2>
-          <p style={{ color: "var(--apple-text-sub)", fontSize: "14px", margin: 0 }}>Klik pada kotak jadwal mana pun untuk melihat detail lengkap aktivitas staf.</p>
+          <p style={{ color: "var(--apple-text-sub)", fontSize: "14px", margin: 0 }}>Arahkan kursor mouse untuk mencentang tugas selesai, atau klik teks untuk detail.</p>
         </div>
       </header>
 
       {/* PANEL FILTER CHECKLIST */}
       <div className="glass-panel" style={{ padding: "15px 20px", backgroundColor: "#fff", borderRadius: "12px", marginBottom: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-          
-          {/* SEKSI BARU: DROPDOWN FILTER WILAYAH KAMPUS */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "14px", fontWeight: 600 }}>Filter Wilayah Kampus:</span>
             <select 
@@ -115,7 +171,6 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
           </div>
         </div>
 
-        {/* LIST CHECKLIST STAF (Otomatis berkurang/terfilter sesuai filterCampus) */}
         <div style={{ display: "flex", gap: "15px", flexWrap: "wrap", borderTop: "1px solid #f5f5f7", paddingTop: "10px" }}>
           {allowedStaffByCampus.map(s => (
             <label key={s.name} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>
@@ -131,6 +186,7 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
         </div>
       </div>
 
+      {/* MATRIX TABLE */}
       <div className="glass-panel" style={{ overflowX: "auto", padding: "10px", backgroundColor: "#fff" }}>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "12px", minWidth: "1100px" }}>
           <thead>
@@ -169,23 +225,48 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
                             }
                           }}
                           style={{ 
-                            padding: "12px", 
+                            padding: "12px 8px", 
                             borderRadius: "14px", 
                             minHeight: "85px", 
-                            backgroundColor: hasJob ? `${currentStaffColor}12` : "#fff", 
-                            border: hasJob ? `1.5px solid ${currentStaffColor}` : "1px dashed #e5e5ea",
+                            backgroundColor: hasJob ? `${currentStaffColor}08` : "#fff", 
+                            border: hasJob ? `1.5px solid ${currentStaffColor}40` : "1px dashed #e5e5ea",
                             cursor: hasJob ? "pointer" : "default",
                             transition: "all 0.2s ease"
                           }}
-                          onMouseEnter={(e) => { if(hasJob) e.currentTarget.style.transform = "scale(1.02)"; }}
-                          onMouseLeave={(e) => { if(hasJob) e.currentTarget.style.transform = "scale(1)"; }}
                         >
                           {hasJob ? (
-                            <div style={{ display: "flex", flexDirection: "column", gap: "6px", textAlign: "left" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "4px", textAlign: "left" }}>
                               {dayActivities.map(act => (
-                                <div key={act.id} style={{ fontSize: "13px", color: "var(--apple-text-main)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                  <span style={{ color: currentStaffColor, fontWeight: 700 }}>({formatTime(act.start_time)}-{formatTime(act.end_time)}) </span>
-                                  {act.title}
+                                <div key={act.id} className="todo-row">
+                                  
+                                  {/* ICON CHECKBOX HOVER GERAKAN ALIS */}
+                                  <div 
+                                    className={`apple-checkbox ${act.is_completed ? "checked" : ""}`}
+                                    onClick={(e) => handleToggleComplete(e, act.id, act.is_completed)}
+                                    style={{ 
+                                      borderColor: act.is_completed ? "#34c759" : currentStaffColor,
+                                      backgroundColor: act.is_completed ? "#34c759" : "transparent"
+                                    }}
+                                  >
+                                    {act.is_completed && <span style={{ color: "#fff", fontSize: "9px", fontWeight: "bold" }}>✓</span>}
+                                  </div>
+
+                                  {/* TEKS UTAMA TUGAS (Otomatis redup & strikethrough jika checked) */}
+                                  <div style={{ 
+                                    color: act.is_completed ? "#86868b" : "var(--apple-text-main)", 
+                                    textDecoration: act.is_completed ? "line-through" : "none",
+                                    whiteSpace: "nowrap", 
+                                    overflow: "hidden", 
+                                    textOverflow: "ellipsis",
+                                    fontSize: "12px",
+                                    opacity: act.is_completed ? 0.6 : 1
+                                  }}>
+                                    <span style={{ color: act.is_completed ? "#86868b" : currentStaffColor, fontWeight: 700 }}>
+                                      ({formatTime(act.start_time)}){" "}
+                                    </span>
+                                    {act.title}
+                                  </div>
+
                                 </div>
                               ))}
                             </div>
@@ -198,39 +279,28 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
               ))}
           </tbody>
         </table>
-
-        {/* LEGENDA WARNA */}
-        <div style={{ display: "flex", gap: "20px", justifyContent: "center", alignItems: "center", padding: "15px 0", borderTop: "1px solid #f5f5f7", marginTop: "15px", flexWrap: "wrap" }}>
-          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-sub)" }}>LEGENDA WARNA ({filterCampus}):</span>
-          {allowedStaffByCampus.map(s => (
-            <div key={s.name} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600 }}>
-              <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: s.color, display: "inline-block" }}></span>
-              <span>{s.name}</span>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* MODAL DETAIL */}
       {detailModal.isOpen && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.25)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-          <div className="glass-panel" style={{ backgroundColor: "#fff", width: "100%", maxWidth: "550px", padding: "30px", maxHeight: "80vh", overflowY: "auto", borderRadius: "16px" }}>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.25)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyCenter: "center", zIndex: 1000 }}>
+          <div className="glass-panel" style={{ backgroundColor: "#fff", width: "100%", maxWidth: "550px", padding: "30px", maxHeight: "80vh", overflowY: "auto", borderRadius: "16px", margin: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h3 style={{ margin: 0, fontSize: "20px", fontWeight: 700 }}>Aktivitas {detailModal.staffName} ({detailModal.dateRaw})</h3>
               <button onClick={() => setDetailModal(p => ({ ...p, isOpen: false }))} style={{ background: "none", border: "none", fontSize: "18px", cursor: "pointer", color: "var(--apple-text-sub)" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               {detailModal.data.map((job) => (
-                <div key={job.id} style={{ padding: "14px", borderRadius: "12px", border: `1.5px solid ${staffColorMap[detailModal.staffName] || '#e5e5ea'}`, backgroundColor: "rgba(0,0,0,0.01)" }}>
+                <div key={job.id} style={{ padding: "14px", borderRadius: "12px", border: `1.5px solid ${staffColorMap[detailModal.staffName] || '#e5e5ea'}`, backgroundColor: "rgba(0,0,0,0.01)", opacity: job.is_completed ? 0.6 : 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", alignItems: "center" }}>
-                    <span style={{ color: staffColorMap[detailModal.staffName] || "var(--apple-green)", fontSize: "13px", fontWeight: 700 }}>
-                      ⏰ {formatTime(job.start_time)} - {formatTime(job.end_time)}
+                    <span style={{ color: staffColorMap[detailModal.staffName] || "var(--apple-green)", fontSize: "13px", fontWeight: 700, textDecoration: job.is_completed ? "line-through" : "none" }}>
+                      ⏰ {formatTime(job.start_time)} - {formatTime(job.end_time)} {job.is_completed ? "✓ (Selesai)" : ""}
                     </span>
                     <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 6px", borderRadius: "4px", backgroundColor: "#f5f5f7", color: "var(--apple-text-sub)" }}>
                       {job.source === "google_calendar" ? "🌐 Google Calendar" : "✏️ Manual"}
                     </span>
                   </div>
-                  <h4 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 600 }}>{job.title}</h4>
+                  <h4 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 600, textDecoration: job.is_completed ? "line-through" : "none" }}>{job.title}</h4>
                   <p style={{ fontSize: "14px", color: "var(--apple-text-sub)", margin: 0, lineHeight: "1.4" }}>
                     {job.description || "Tidak ada deskripsi rinci."}
                   </p>
