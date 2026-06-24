@@ -222,7 +222,8 @@ function App() {
       if (data) setActivities(prev => [...prev, ...data]);
       setIsModalOpen(false);
     } catch (err) {
-      console.error(err);
+      console.error("Gagal menyimpan aktivitas:", err);
+      alert("Gagal menyimpan ke database. Periksa konsol browser.");
     }
   };
 
