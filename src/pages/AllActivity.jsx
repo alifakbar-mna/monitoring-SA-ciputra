@@ -139,12 +139,10 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
           transform: scale(0.8);
           transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        /* Tampilkan checkbox jika di-hover atau jika memang sudah selesai */
         .todo-row:hover .apple-checkbox, .apple-checkbox.checked {
           opacity: 1;
           transform: scale(1);
         }
-        /* Animasi memantul (popping) saat status berubah menjadi checked */
         .apple-checkbox.checked {
           animation: popCheck 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
@@ -265,7 +263,7 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
                                     {act.is_completed && <span style={{ color: "#fff", fontSize: "9px", fontWeight: "bold" }}>✓</span>}
                                   </div>
 
-                                  {/* JUDUL TUGAS (Redup & Coret jika Selesai) */}
+                                  {/* JUDUL TUGAS (Mendukung Tampilan Range Jam Mulai - Selesai Lengkap) */}
                                   <div style={{ 
                                     color: act.is_completed ? "#86868b" : "var(--apple-text-main)", 
                                     textDecoration: act.is_completed ? "line-through" : "none",
@@ -277,7 +275,7 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
                                     transition: "all 0.2s ease"
                                   }}>
                                     <span style={{ color: act.is_completed ? "#86868b" : currentStaffColor, fontWeight: 700 }}>
-                                      ({formatTime(act.start_time)}){" "}
+                                      ({formatTime(act.start_time)} - {formatTime(act.end_time)}){" "}
                                     </span>
                                     {act.title}
                                   </div>
