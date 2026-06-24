@@ -11,7 +11,6 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
     const { data } = await supabase.from("staff").select("name, color, campus");
     if (data) {
       setDbStaffInfo(data);
-      // Hanya set centang default jika visibleStaff masih kosong (inisialisasi awal)
       if (visibleStaff.length === 0) {
         setVisibleStaff(data.map(s => s.name));
       }
@@ -81,35 +80,45 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
     }
   };
 
-  // FUNGSI BARU: Mengubah Status Selesai / Belum Selesai ke Supabase
+  // FUNGSI UTAMA: Mengubah Status Selesai (Optimistic + Animasi Tanpa Delay)
   const handleToggleComplete = async (e, activityId, currentStatus) => {
-    e.stopPropagation(); // PENTING: Mencegah modal detail terbuka saat mencentang!
+    e.stopPropagation(); // Mencegah modal detail terbuka secara tidak sengaja
     
     const nextStatus = !currentStatus;
 
+    // 1. OPTIMISTIC UPDATE: Langsung ubah datanya di UI agar animasi langsung terpicu
+    const targetActivity = activities.find(a => a.id === activityId);
+    if (targetActivity) {
+      targetActivity.is_completed = nextStatus;
+    }
+
+    // 2. Jalankan pembaruan data ke database Supabase di background
     const { error } = await supabase
       .from("activities")
       .update({ is_completed: nextStatus })
       .eq("id", activityId);
 
     if (!error) {
-      // Trigger parent component untuk refresh data agar UI terupdate real-time
+      // Sinkronisasi data global parent tanpa mengganggu interaksi layar
       if (onUpdateActivity) onUpdateActivity();
     } else {
+      // Rollback jika terjadi kegagalan jaringan/database
+      if (targetActivity) targetActivity.is_completed = currentStatus;
       console.error("Gagal memperbarui status tugas:", error);
+      alert("Koneksi gagal. Gagal memperbarui status ke database.");
     }
   };
 
   return (
     <div style={{ padding: "20px 40px" }}>
-      {/* GAYA CSS EMBEDDED UNTUK HOVER EFFECT CHECKBOX (APPLE STYLE) */}
+      {/* SEKSI INTERAKTIF STYLE (APPLE MICRO-INTERACTIONS) */}
       <style>{`
         .todo-row {
           display: flex;
           align-items: center;
           gap: 6px;
           font-size: 13px;
-          padding: 3px 6px;
+          padding: 4px 6px;
           border-radius: 6px;
           transition: background 0.2s ease;
         }
@@ -125,19 +134,24 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
           flex-shrink: 0;
-          opacity: 0; /* Tersembunyi default */
+          opacity: 0; 
           transform: scale(0.8);
+          transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        /* Tampilkan checkbox bundar hanya saat baris tugas di-hover atau ketika sudah selesai */
+        /* Tampilkan checkbox jika di-hover atau jika memang sudah selesai */
         .todo-row:hover .apple-checkbox, .apple-checkbox.checked {
           opacity: 1;
           transform: scale(1);
         }
-        .apple-checkbox:hover {
-          border-color: #34c759 !important;
-          background: rgba(52, 199, 89, 0.1);
+        /* Animasi memantul (popping) saat status berubah menjadi checked */
+        .apple-checkbox.checked {
+          animation: popCheck 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popCheck {
+          0% { transform: scale(0.8); }
+          50% { transform: scale(1.18); }
+          100% { transform: scale(1); }
         }
       `}</style>
 
@@ -239,7 +253,7 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
                               {dayActivities.map(act => (
                                 <div key={act.id} className="todo-row">
                                   
-                                  {/* ICON CHECKBOX HOVER GERAKAN ALIS */}
+                                  {/* APPLE CHECKBOX BOX */}
                                   <div 
                                     className={`apple-checkbox ${act.is_completed ? "checked" : ""}`}
                                     onClick={(e) => handleToggleComplete(e, act.id, act.is_completed)}
@@ -251,7 +265,7 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
                                     {act.is_completed && <span style={{ color: "#fff", fontSize: "9px", fontWeight: "bold" }}>✓</span>}
                                   </div>
 
-                                  {/* TEKS UTAMA TUGAS (Otomatis redup & strikethrough jika checked) */}
+                                  {/* JUDUL TUGAS (Redup & Coret jika Selesai) */}
                                   <div style={{ 
                                     color: act.is_completed ? "#86868b" : "var(--apple-text-main)", 
                                     textDecoration: act.is_completed ? "line-through" : "none",
@@ -259,7 +273,8 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
                                     overflow: "hidden", 
                                     textOverflow: "ellipsis",
                                     fontSize: "12px",
-                                    opacity: act.is_completed ? 0.6 : 1
+                                    opacity: act.is_completed ? 0.55 : 1,
+                                    transition: "all 0.2s ease"
                                   }}>
                                     <span style={{ color: act.is_completed ? "#86868b" : currentStaffColor, fontWeight: 700 }}>
                                       ({formatTime(act.start_time)}){" "}
@@ -283,7 +298,7 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
 
       {/* MODAL DETAIL */}
       {detailModal.isOpen && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.25)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyCenter: "center", zIndex: 1000 }}>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.25)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
           <div className="glass-panel" style={{ backgroundColor: "#fff", width: "100%", maxWidth: "550px", padding: "30px", maxHeight: "80vh", overflowY: "auto", borderRadius: "16px", margin: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h3 style={{ margin: 0, fontSize: "20px", fontWeight: 700 }}>Aktivitas {detailModal.staffName} ({detailModal.dateRaw})</h3>
