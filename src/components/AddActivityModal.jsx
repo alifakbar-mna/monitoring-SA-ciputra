@@ -6,8 +6,6 @@ export default function AddActivityModal({ isOpen, onClose, selectedStaff, onSav
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState("08:00"); // Default jam mulai
   const [endTime, setEndTime] = useState("09:30");   // Default jam selesai
-  const [deadline, setDeadline] = useState("");
-  const [priority, setPriority] = useState("normal");
 
   if (!isOpen) return null;
 
@@ -16,6 +14,7 @@ export default function AddActivityModal({ isOpen, onClose, selectedStaff, onSav
     if (!title) return alert("Judul aktivitas wajib diisi!");
     if (!startTime || !endTime) return alert("Jam mulai dan selesai wajib diisi!");
 
+    // Mengirimkan objek bersih tanpa properti deadline dan priority
     onSave({
       staff_name: selectedStaff,
       title,
@@ -23,10 +22,10 @@ export default function AddActivityModal({ isOpen, onClose, selectedStaff, onSav
       activity_date: date,
       start_time: startTime,
       end_time: endTime,
-      deadline: deadline || null,
-      priority,
       status: "not_started"
     });
+
+    // Reset Form
     setTitle("");
     setDescription("");
     setStartTime("08:00");
@@ -65,7 +64,7 @@ export default function AddActivityModal({ isOpen, onClose, selectedStaff, onSav
             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: "10px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "14px" }} />
           </div>
 
-          {/* INPUT BARU: JAM MULAI & SELESAI */}
+          {/* JAM MULAI & SELESAI */}
           <div style={{ display: "flex", gap: "10px" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: "5px", flex: 1 }}>
               <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-sub)" }}>JAM MULAI</label>
@@ -75,20 +74,6 @@ export default function AddActivityModal({ isOpen, onClose, selectedStaff, onSav
               <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-sub)" }}>JAM SELESAI</label>
               <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ padding: "10px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "14px" }} />
             </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-            <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-sub)" }}>DEADLINE</label>
-            <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} style={{ padding: "10px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "14px" }} />
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-            <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-sub)" }}>SKALA PRIORITAS</label>
-            <select value={priority} onChange={e => setPriority(e.target.value)} style={{ padding: "10px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "14px" }}>
-              <option value="urgent">Urgent</option>
-              <option value="normal">Normal</option>
-              <option value="low">Low</option>
-            </select>
           </div>
 
           <button type="submit" style={{ padding: "12px", borderRadius: "8px", border: "none", backgroundColor: "var(--apple-text-main)", color: "#fff", fontWeight: 600, fontSize: "14px", marginTop: "10px", cursor: "pointer" }}>
