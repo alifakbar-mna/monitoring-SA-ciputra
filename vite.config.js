@@ -7,9 +7,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://monitoring-sa-ciputra.vercel.app', // 👈 Ganti port 3000 ini sesuai port backend local Anda jika ada
+        target: 'https://monitoring-sa-ciputra.vercel.app',
         changeOrigin: true,
         secure: false,
+        // Ditambahkan rewrite agar rute lokal menyatu mulus ke Vercel cloud tanpa duplikasi /api/api
+        rewrite: (path) => path.replace(/^\/api/, '/api'),
       }
     }
   }
