@@ -7,6 +7,10 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
   const [visibleStaff, setVisibleStaff] = useState([]); 
   const [filterCampus, setFilterCampus] = useState("Semua");
 
+  // STATE FILTER TANGGAL BARU
+  const [dateFilterType, setDateFilterType] = useState("Semua"); // "Semua" | "Hari Ini" | "Kustom"
+  const [customStartDate, setCustomStartDate] = useState("");
+
   const loadStaffDetails = async () => {
     const { data } = await supabase.from("staff").select("name, color, campus");
     if (data) {
@@ -48,23 +52,40 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
     }
   }, [filterCampus, dbStaffInfo]);
 
+  // LOGIKA RESPONSIVE DATE RANGE BERDASARKAN FILTER BARU
   const dateRange = useMemo(() => {
     const days = [];
     const validYear = parseInt(currentYear) || new Date().getFullYear();
     const validMonth = parseInt(currentMonth) ? parseInt(currentMonth) - 1 : new Date().getMonth();
+    
+    // Cari batas total hari dalam bulan berjalan
     const totalDays = new Date(validYear, validMonth + 1, 0).getDate();
+
+    // Dapatkan tanggal hari ini (waktu lokal) format YYYY-MM-DD
+    const todayObj = new Date();
+    const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
     for (let i = 1; i <= totalDays; i++) {
       const d = new Date(validYear, validMonth, i);
       const yyyy = d.getFullYear(); 
       const mm = String(d.getMonth() + 1).padStart(2, '0'); 
+      const dd = String(i).padStart(2, '0');
+      const rawDateStr = `${yyyy}-${mm}-${dd}`;
+
+      // Kondisi Penyaringan Berdasarkan Tombol/Input Pilihan
+      if (dateFilterType === "Hari Ini") {
+        if (rawDateStr !== todayStr) continue;
+      } else if (dateFilterType === "Kustom" && customStartDate) {
+        if (rawDateStr < customStartDate) continue; 
+      }
+
       days.push({ 
-        raw: `${yyyy}-${mm}-${String(i).padStart(2, '0')}`, 
+        raw: rawDateStr, 
         label: d.toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" }) 
       });
     }
     return days;
-  }, [currentMonth, currentYear]);
+  }, [currentMonth, currentYear, dateFilterType, customStartDate]);
 
   const formatTime = (timeStr) => { 
     if (!timeStr) return ""; 
@@ -80,29 +101,23 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
     }
   };
 
-  // FUNGSI UTAMA: Mengubah Status Selesai (Optimistic + Animasi Tanpa Delay)
   const handleToggleComplete = async (e, activityId, currentStatus) => {
-    e.stopPropagation(); // Mencegah modal detail terbuka secara tidak sengaja
-    
+    e.stopPropagation(); 
     const nextStatus = !currentStatus;
 
-    // 1. OPTIMISTIC UPDATE: Langsung ubah datanya di UI agar animasi langsung terpicu
     const targetActivity = activities.find(a => a.id === activityId);
     if (targetActivity) {
       targetActivity.is_completed = nextStatus;
     }
 
-    // 2. Jalankan pembaruan data ke database Supabase di background
     const { error } = await supabase
       .from("activities")
       .update({ is_completed: nextStatus })
       .eq("id", activityId);
 
     if (!error) {
-      // Sinkronisasi data global parent tanpa mengganggu interaksi layar
       if (onUpdateActivity) onUpdateActivity();
     } else {
-      // Rollback jika terjadi kegagalan jaringan/database
       if (targetActivity) targetActivity.is_completed = currentStatus;
       console.error("Gagal memperbarui status tugas:", error);
       alert("Koneksi gagal. Gagal memperbarui status ke database.");
@@ -111,7 +126,6 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
 
   return (
     <div style={{ padding: "20px 40px" }}>
-      {/* SEKSI INTERAKTIF STYLE (APPLE MICRO-INTERACTIONS) */}
       <style>{`
         .todo-row {
           display: flex;
@@ -151,39 +165,94 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
           50% { transform: scale(1.18); }
           100% { transform: scale(1); }
         }
+        .filter-btn {
+          padding: 6px 14px;
+          border-radius: 8px;
+          border: 1px solid #d2d2d7;
+          background: #fff;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+        .filter-btn.active {
+          background: #0071e3;
+          color: #fff;
+          border-color: #0071e3;
+        }
       `}</style>
 
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <div>
           <h2 style={{ fontSize: "28px", fontWeight: 700, margin: 0 }}>All Activity Matrix</h2>
-          <p style={{ color: "var(--apple-text-sub)", fontSize: "14px", margin: 0 }}>Arahkan kursor mouse untuk mencentang tugas selesai, atau klik teks untuk detail.</p>
+          <p style={{ color: "#86868b", fontSize: "14px", margin: 0 }}>Arahkan kursor mouse untuk mencentang tugas selesai, atau klik teks untuk detail.</p>
         </div>
       </header>
 
-      {/* PANEL FILTER CHECKLIST */}
-      <div className="glass-panel" style={{ padding: "15px 20px", backgroundColor: "#fff", borderRadius: "12px", marginBottom: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "14px", fontWeight: 600 }}>Filter Wilayah Kampus:</span>
-            <select 
-              value={filterCampus} 
-              onChange={e => setFilterCampus(e.target.value)}
-              style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", backgroundColor: "#fff", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}
-            >
-              <option value="Semua">Semua Wilayah</option>
-              <option value="Surabaya">Surabaya</option>
-              <option value="Makassar">Makassar</option>
-              <option value="Jakarta">Jakarta</option>
-            </select>
+      {/* PANEL FILTER UTAMA */}
+      <div className="glass-panel" style={{ padding: "18px 20px", backgroundColor: "#fff", borderRadius: "12px", marginBottom: "20px", display: "flex", flexDirection: "column", gap: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.02)" }}>
+        
+        {/* ROW 1: WILAYAH KAMPUS & FILTER WAKTU BARU */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
+          
+          {/* Sisi Kiri: Filter Wilayah & Tombol Hari Ini */}
+          <div style={{ display: "flex", alignItems: "center", gap: "15px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#1d1d1f" }}>Kampus:</span>
+              <select 
+                value={filterCampus} 
+                onChange={e => setFilterCampus(e.target.value)}
+                style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", backgroundColor: "#fff", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}
+              >
+                <option value="Semua">Semua Wilayah</option>
+                <option value="Surabaya">Surabaya</option>
+                <option value="Makassar">Makassar</option>
+                <option value="Jakarta">Jakarta</option>
+              </select>
+            </div>
+
+            {/* INTEGRASI TOMBOL TIMELINE */}
+            <div style={{ display: "flex", gap: "6px", borderLeft: "1px solid #d2d2d7", paddingLeft: "15px" }}>
+              <button 
+                onClick={() => setDateFilterType("Semua")} 
+                className={`filter-btn ${dateFilterType === "Semua" ? "active" : ""}`}
+              >
+                Semua Hari
+              </button>
+              <button 
+                onClick={() => setDateFilterType("Hari Ini")} 
+                className={`filter-btn ${dateFilterType === "Hari Ini" ? "active" : ""}`}
+              >
+                📅 Hari Ini
+              </button>
+            </div>
+
+            {/* INPUT PILIHAN TANGGAL S/D AKHIR BULAN */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "13px", color: "#86868b" }}>Mulai Tgl:</span>
+              <input 
+                type="date" 
+                value={customStartDate}
+                onChange={(e) => {
+                  setCustomStartDate(e.target.value);
+                  if (e.target.value) setDateFilterType("Kustom");
+                }}
+                style={{ padding: "5px 10px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", outline: "none" }}
+              />
+              {dateFilterType === "Kustom" && (
+                <span style={{ fontSize: "12px", color: "#0071e3", fontWeight: 500 }}>s/d Akhir Bulan</span>
+              )}
+            </div>
           </div>
 
           <div style={{ display: "flex", gap: "10px" }}>
-            <button onClick={() => setVisibleStaff(allowedStaffByCampus.map(s => s.name))} style={{ background: "none", border: "none", color: "var(--apple-blue)", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>Pilih Semua</button>
+            <button onClick={() => setVisibleStaff(allowedStaffByCampus.map(s => s.name))} style={{ background: "none", border: "none", color: "#0071e3", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>Pilih Semua</button>
             <button onClick={() => setVisibleStaff([])} style={{ background: "none", border: "none", color: "#ff3b30", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>Bersihkan</button>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "15px", flexWrap: "wrap", borderTop: "1px solid #f5f5f7", paddingTop: "10px" }}>
+        {/* ROW 2: CHECKLIST STAFF ROW */}
+        <div style={{ display: "flex", gap: "15px", flexWrap: "wrap", borderTop: "1px solid #f5f5f7", paddingTop: "12px" }}>
           {allowedStaffByCampus.map(s => (
             <label key={s.name} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}>
               <input type="checkbox" checked={visibleStaff.includes(s.name)} onChange={() => handleStaffChecklistChange(s.name)} />
@@ -203,10 +272,13 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "12px", minWidth: "1100px" }}>
           <thead>
             <tr>
-              <th style={{ textAlign: "left", padding: "12px", color: "var(--apple-text-sub)", fontSize: "13px", width: "150px" }}>STAFF NAME</th>
+              <th style={{ textAlign: "left", padding: "12px", color: "#86868b", fontSize: "13px", width: "150px" }}>STAFF NAME</th>
               {dateRange.map(day => (
                 <th key={day.raw} style={{ textAlign: "center", padding: "12px", backgroundColor: "rgba(0,0,0,0.03)", borderRadius: "10px", minWidth: "200px" }}>{day.label}</th>
               ))}
+              {dateRange.length === 0 && (
+                <th style={{ textAlign: "center", padding: "20px", color: "#86868b" }}>Tidak ada tanggal yang cocok dengan filter.</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -251,7 +323,6 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
                               {dayActivities.map(act => (
                                 <div key={act.id} className="todo-row">
                                   
-                                  {/* APPLE CHECKBOX BOX */}
                                   <div 
                                     className={`apple-checkbox ${act.is_completed ? "checked" : ""}`}
                                     onClick={(e) => handleToggleComplete(e, act.id, act.is_completed)}
@@ -263,9 +334,8 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
                                     {act.is_completed && <span style={{ color: "#fff", fontSize: "9px", fontWeight: "bold" }}>✓</span>}
                                   </div>
 
-                                  {/* JUDUL TUGAS (Mendukung Tampilan Range Jam Mulai - Selesai Lengkap) */}
                                   <div style={{ 
-                                    color: act.is_completed ? "#86868b" : "var(--apple-text-main)", 
+                                    color: act.is_completed ? "#86868b" : "#1d1d1f", 
                                     textDecoration: act.is_completed ? "line-through" : "none",
                                     whiteSpace: "nowrap", 
                                     overflow: "hidden", 
@@ -300,21 +370,21 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
           <div className="glass-panel" style={{ backgroundColor: "#fff", width: "100%", maxWidth: "550px", padding: "30px", maxHeight: "80vh", overflowY: "auto", borderRadius: "16px", margin: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h3 style={{ margin: 0, fontSize: "20px", fontWeight: 700 }}>Aktivitas {detailModal.staffName} ({detailModal.dateRaw})</h3>
-              <button onClick={() => setDetailModal(p => ({ ...p, isOpen: false }))} style={{ background: "none", border: "none", fontSize: "18px", cursor: "pointer", color: "var(--apple-text-sub)" }}>✕</button>
+              <button onClick={() => setDetailModal(p => ({ ...p, isOpen: false }))} style={{ background: "none", border: "none", fontSize: "18px", cursor: "pointer", color: "#86868b" }}>✕</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               {detailModal.data.map((job) => (
                 <div key={job.id} style={{ padding: "14px", borderRadius: "12px", border: `1.5px solid ${staffColorMap[detailModal.staffName] || '#e5e5ea'}`, backgroundColor: "rgba(0,0,0,0.01)", opacity: job.is_completed ? 0.6 : 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", alignItems: "center" }}>
-                    <span style={{ color: staffColorMap[detailModal.staffName] || "var(--apple-green)", fontSize: "13px", fontWeight: 700, textDecoration: job.is_completed ? "line-through" : "none" }}>
+                    <span style={{ color: staffColorMap[detailModal.staffName] || "#34c759", fontSize: "13px", fontWeight: 700, textDecoration: job.is_completed ? "line-through" : "none" }}>
                       ⏰ {formatTime(job.start_time)} - {formatTime(job.end_time)} {job.is_completed ? "✓ (Selesai)" : ""}
                     </span>
-                    <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 6px", borderRadius: "4px", backgroundColor: "#f5f5f7", color: "var(--apple-text-sub)" }}>
+                    <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 6px", borderRadius: "4px", backgroundColor: "#f5f5f7", color: "#86868b" }}>
                       {job.source === "google_calendar" ? "🌐 Google Calendar" : "✏️ Manual"}
                     </span>
                   </div>
                   <h4 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 600, textDecoration: job.is_completed ? "line-through" : "none" }}>{job.title}</h4>
-                  <p style={{ fontSize: "14px", color: "var(--apple-text-sub)", margin: 0, lineHeight: "1.4" }}>
+                  <p style={{ fontSize: "14px", color: "#86868b", margin: 0, lineHeight: "1.4" }}>
                     {job.description || "Tidak ada deskripsi rinci."}
                   </p>
                 </div>
