@@ -27,14 +27,12 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
 
   // Fungsi Toggle Complete langsung dari komponen Card List (Auto Rendering)
   const handleToggleCardComplete = async (activityId, currentStatus) => {
-    // Jalankan update status terbalik ke Supabase
     const { error } = await supabase
       .from("activities")
       .update({ is_completed: !currentStatus })
       .eq("id", activityId);
 
     if (!error) {
-      // PENTING: Panggil fungsi fetch ulang dari parent agar data langsung ter-render detik itu juga
       if (onUpdateActivity) {
         onUpdateActivity(); 
       }
@@ -45,53 +43,108 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
 
   // Fungsi untuk mengirim pesan chat ke Serverless Function /api/generate-todo di Vercel
   const handleSendAiMessage = async () => {
-    if (!inputMessage) return;
-    if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
+    if (!inputMessage.trim()) return;
 
-    const updatedHistory = [...chatHistory, { role: "user", parts: [{ text: inputMessage }] }];
+    if (!targetDate) {
+      return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
+    }
+
+    // 1. Gabungkan pesan baru ke dalam draf history secara sinkron
+    const updatedHistory = [
+      ...chatHistory,
+      {
+        role: "user",
+        parts: [{ text: inputMessage.trim() }]
+      }
+    ];
+
+    // 2. Update state UI lokal secara instan
     setChatHistory(updatedHistory);
-    const userMessageCopy = inputMessage;
+    const userMessageCopy = inputMessage.trim();
     setInputMessage("");
     setIsAiLoading(true);
 
     try {
       const res = await fetch("/api/generate-todo", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessageCopy, chatHistory: chatHistory })
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: userMessageCopy,
+          chatHistory: updatedHistory // Menggunakan draf history terbaru agar data sinkron ke backend
+        })
       });
+
       const data = await res.json();
 
-      setChatHistory(prev => [...prev, { role: "model", parts: [{ text: data.text }] }]);
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal memanggil API Gemini");
+      }
 
-      // Cek apakah balasan Gemini mengandung tag <DATA> (User setuju)
-      if (data.text.includes("<DATA>")) {
-        const jsonString = data.text.match(/<DATA>([\s\S]*?)<\/DATA>/)[1].trim();
-        const todoItems = JSON.parse(jsonString);
+      const aiText = data?.text || "";
 
-        // Map data agar sesuai skema tabel 'activities' Supabase yang sudah di-update
+      // 3. Masukkan respon balik dari Gemini ke chat history box
+      setChatHistory(prev => [
+        ...prev,
+        {
+          role: "model",
+          parts: [{ text: aiText }]
+        }
+      ]);
+
+      // 4. Deteksi dan ekstraksi tag data JSON jika draf disetujui
+      if (aiText.includes("<DATA>")) {
+        const match = aiText.match(/<DATA>([\s\S]*?)<\/DATA>/);
+
+        if (!match?.[1]) {
+          throw new Error("Format DATA dari Gemini tidak valid");
+        }
+
+        const jsonString = match[1].trim();
+        let todoItems = [];
+
+        try {
+          todoItems = JSON.parse(jsonString);
+        } catch (err) {
+          console.error("JSON Gemini tidak valid:", err);
+          throw new Error("JSON yang dikirim Gemini tidak valid");
+        }
+
+        // Mapping objek bersih tanpa menyertakan kolom priority atau deadline
         const insertData = todoItems.map(item => ({
           staff_name: selectedStaff,
-          title: item.title,
+          title: item.title || "Tanpa Judul",
           activity_date: targetDate,
           start_time: item.start_time || "08:00",
           end_time: item.end_time || "09:00",
-          is_completed: item.is_completed ?? false,          // Menangkap status completion default dari Gemini
+          is_completed: item.is_completed ?? false,
           source: "manual",
-          description: item.description || "Dibuat otomatis oleh Asisten Gemini AI." // Deskripsi detail dari Gemini
+          description: item.description || "Dibuat otomatis oleh Asisten Gemini AI."
         }));
 
-        const { error } = await supabase.from("activities").insert(insertData);
-        if (!error) {
-          alert(`🎉 Sukses! ${todoItems.length} To-Do List berhasil disimpan ke database.`);
-          setChatHistory([]); // Reset obrolan setelah sukses dimasukkan
-          if (onUpdateActivity) onUpdateActivity(); // Trigger fetch ulang data agar langsung muncul di sisi kanan
-        } else {
+        const { error } = await supabase
+          .from("activities")
+          .insert(insertData);
+
+        if (error) {
           console.error("Gagal menyimpan ke Supabase:", error);
+          alert("Gagal menyimpan data ke database.");
+          return;
+        }
+
+        alert(`🎉 Sukses! ${todoItems.length} To-Do List berhasil disimpan ke database.`);
+        
+        // Kosongkan chat history box agar siap menyusun agenda baru berikutnya
+        setChatHistory([]);
+
+        if (onUpdateActivity) {
+          onUpdateActivity();
         }
       }
     } catch (err) {
       console.error("Gagal terhubung dengan API Gemini:", err);
+      alert(err.message || "Terjadi kesalahan");
     } finally {
       setIsAiLoading(false);
     }
@@ -170,7 +223,7 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
                   backgroundColor: chat.role === "user" ? "#0071e3" : "#e5e5ea", 
                   color: chat.role === "user" ? "#fff" : "#000" 
                 }}>
-                  {chat.parts[0].text.replace(/<DATA>[\s\S]*?<\/DATA>/g, "").trim()}
+                  {chat.parts?.[0]?.text ? chat.parts[0].text.replace(/<DATA>[\s\S]*?<\/DATA>/g, "").trim() : ""}
                 </div>
               </div>
             ))}
