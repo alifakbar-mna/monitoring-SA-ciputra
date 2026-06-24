@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { supabase } from "../supabase";
 
 export default function MyActivity({ activities, selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity }) {
@@ -8,14 +8,37 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
   const [targetDate, setTargetDate] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  const filteredActivities = activities
-    .filter(act => act.staff_name === selectedStaff)
-    .sort((a, b) => {
-      if (a.activity_date === b.activity_date) {
-        return a.start_time > b.start_time ? 1 : -1;
-      }
-      return a.activity_date > b.activity_date ? 1 : -1;
-    });
+  // STATE FILTER TANGGAL BARU
+  const [dateFilterType, setDateFilterType] = useState("Semua"); // "Semua" | "Hari Ini" | "Kustom"
+  const [customStartDate, setCustomStartDate] = useState("");
+
+  // LOGIKA PENYARINGAN DATA AKTIVITAS BERDASARKAN FILTER BARU
+  const filteredActivities = useMemo(() => {
+    // Dapatkan tanggal hari ini (waktu lokal) format YYYY-MM-DD
+    const todayObj = new Date();
+    const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
+    return activities
+      .filter(act => {
+        // Filter berdasarkan kecocokan nama staf terlebih dahulu
+        if (act.staff_name !== selectedStaff) return false;
+        
+        // Kondisi Penyaringan Berdasarkan Pilihan Toolbar
+        if (dateFilterType === "Hari Ini") {
+          return act.activity_date === todayStr;
+        } else if (dateFilterType === "Kustom" && customStartDate) {
+          return act.activity_date >= customStartDate;
+        }
+        
+        return true; // "Semua"
+      })
+      .sort((a, b) => {
+        if (a.activity_date === b.activity_date) {
+          return a.start_time > b.start_time ? 1 : -1;
+        }
+        return a.activity_date > b.activity_date ? 1 : -1;
+      });
+  }, [activities, selectedStaff, dateFilterType, customStartDate]);
 
   const formatTime = (timeStr) => {
     if (!timeStr) return "";
@@ -49,7 +72,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
       return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
     }
 
-    // 1. Gabungkan pesan baru ke dalam draf history secara sinkron
     const updatedHistory = [
       ...chatHistory,
       {
@@ -58,7 +80,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
       }
     ];
 
-    // 2. Update state UI lokal secara instan
     setChatHistory(updatedHistory);
     const userMessageCopy = inputMessage.trim();
     setInputMessage("");
@@ -72,7 +93,7 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
         },
         body: JSON.stringify({
           message: userMessageCopy,
-          chatHistory: updatedHistory // Menggunakan draf history terbaru agar data sinkron ke backend
+          chatHistory: updatedHistory
         })
       });
 
@@ -84,7 +105,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
 
       const aiText = data?.text || "";
 
-      // 3. Masukkan respon balik dari Gemini ke chat history box
       setChatHistory(prev => [
         ...prev,
         {
@@ -93,7 +113,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
         }
       ]);
 
-      // 4. Deteksi dan ekstraksi tag data JSON jika draf disetujui
       if (aiText.includes("<DATA>")) {
         const match = aiText.match(/<DATA>([\s\S]*?)<\/DATA>/);
 
@@ -111,7 +130,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
           throw new Error("JSON yang dikirim Gemini tidak valid");
         }
 
-        // Mapping objek bersih tanpa menyertakan kolom priority atau deadline
         const insertData = todoItems.map(item => ({
           staff_name: selectedStaff,
           title: item.title || "Tanpa Judul",
@@ -134,8 +152,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
         }
 
         alert(`🎉 Sukses! ${todoItems.length} To-Do List berhasil disimpan ke database.`);
-        
-        // Kosongkan chat history box agar siap menyusun agenda baru berikutnya
         setChatHistory([]);
 
         if (onUpdateActivity) {
@@ -152,8 +168,26 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
 
   return (
     <div style={{ padding: "20px 40px" }}>
+      <style>{`
+        .filter-btn {
+          padding: 6px 14px;
+          border-radius: 8px;
+          border: 1px solid #d2d2d7;
+          background: #fff;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+        .filter-btn.active {
+          background: #0071e3;
+          color: #fff;
+          border-color: #0071e3;
+        }
+      `}</style>
+
       {/* HEADER UTAMA */}
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "25px" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "15px" }}>
         <div>
           <h2 style={{ fontSize: "28px", fontWeight: 700, letterSpacing: "-0.5px", margin: 0 }}>
             Aktivitas {selectedStaff}
@@ -183,6 +217,40 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
           <span style={{ fontSize: "18px", fontWeight: "bold" }}>+</span> Tambah Tugas Baru
         </button>
       </header>
+
+      {/* TOOLBAR FILTER WAKTU BARU (Sejajar di bawah Header) */}
+      <div className="glass-panel" style={{ padding: "12px 20px", backgroundColor: "#fff", borderRadius: "12px", marginBottom: "25px", display: "flex", alignItems: "center", gap: "15px", flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,0.02)" }}>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button 
+            onClick={() => setDateFilterType("Semua")} 
+            className={`filter-btn ${dateFilterType === "Semua" ? "active" : ""}`}
+          >
+            Semua Hari
+          </button>
+          <button 
+            onClick={() => setDateFilterType("Hari Ini")} 
+            className={`filter-btn ${dateFilterType === "Hari Ini" ? "active" : ""}`}
+          >
+            📅 Hari Ini
+          </button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", borderLeft: "1px solid #d2d2d7", paddingLeft: "15px" }}>
+          <span style={{ fontSize: "13px", color: "#86868b" }}>Mulai Tgl:</span>
+          <input 
+            type="date" 
+            value={customStartDate}
+            onChange={(e) => {
+              setCustomStartDate(e.target.value);
+              if (e.target.value) setDateFilterType("Kustom");
+            }}
+            style={{ padding: "5px 10px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", outline: "none" }}
+          />
+          {dateFilterType === "Kustom" && (
+            <span style={{ fontSize: "12px", color: "#0071e3", fontWeight: 500 }}>s/d Akhir Bulan</span>
+          )}
+        </div>
+      </div>
 
       {/* TAMPILAN DUA KOLOM: KIRI ASSISTANT AI, KANAN TUGAS AKTIVITAS */}
       <div style={{ display: "flex", gap: "30px", alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -255,7 +323,7 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
         <div style={{ flex: "2 1 500px" }}>
           {filteredActivities.length === 0 ? (
             <div className="glass-panel" style={{ padding: "40px", textAlign: "center", color: "var(--apple-text-sub)", backgroundColor: "#fff", borderRadius: "14px" }}>
-              Tidak ada data aktivitas khusus untuk {selectedStaff} di bulan ini.
+              Tidak ada data aktivitas yang sesuai dengan filter filter tanggal ini.
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "20px" }}>
