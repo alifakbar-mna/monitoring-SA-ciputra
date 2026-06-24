@@ -97,7 +97,7 @@ function App() {
         const newEventsToInsert = Array.from(uniqueEventsMap.values());
 
         if (newEventsToInsert.length > 0) {
-          const { data: insertedData, error: upsertError } = await supabase
+          const { data: insertedData, error: upsertError = null } = await supabase
             .from("activities")
             .upsert(newEventsToInsert, { onConflict: 'gcal_event_id' })
             .select();
@@ -187,7 +187,6 @@ function App() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'activities' },
         () => { 
-          // Memanggil penarik data ulang ketika ada pembaruan baris data di database
           fetchAllActivities(currentUser, session); 
         }
       )
@@ -196,7 +195,7 @@ function App() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, session, fetchAllActivities]);
 
-  // PERBAIKAN UTAMA: Dibuat fleksibel agar bisa menerima perubahan is_completed, title, maupun description secara dinamis
+  // PERBAIKAN UTAMA: Mendukung pembaruan start_time & end_time secara menyeluruh dan dinamis
   const handleUpdateActivity = async (updatedAct) => {
     try {
       const { error } = await supabase
@@ -204,7 +203,9 @@ function App() {
         .update({ 
           title: updatedAct.title, 
           description: updatedAct.description,
-          is_completed: updatedAct.is_completed // Ditambahkan agar status checkbox diizinkan lolos masuk ke database
+          is_completed: updatedAct.is_completed,
+          start_time: updatedAct.start_time, // 👈 SEKARANG LOLOS KE DATABASE
+          end_time: updatedAct.end_time       // 👈 SEKARANG LOLOS KE DATABASE
         })
         .eq("id", updatedAct.id);
 
@@ -299,7 +300,6 @@ function App() {
       return parseInt(parts[0], 10) === currentYear && parseInt(parts[1], 10) === currentMonth;
     });
 
-    // PENTING: Meneruskan trigger pembacaan ulang (onUpdateActivity) ke semua halaman tujuan
     switch (currentPage) {
       case "dashboard": return <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
       case "all_activity": return <AllActivity activities={filteredActivities} staffList={staffList} onUpdateActivity={() => fetchAllActivities(currentUser, session)} currentMonth={currentMonth} currentYear={currentYear} />;
