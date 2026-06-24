@@ -49,28 +49,68 @@ export default function AdminPanel() {
     }
   };
 
-  // FUNGSI UPDATE DATA (Dipanggil dari halaman Edit)
+  // FUNGSI UPDATE DATA (Dengan Pelacakan Counter & Force Trim)
   const handleUpdateStaff = async (e) => {
     e.preventDefault();
     if (!editingStaff.name || !editingStaff.email) return alert("Isi semua data!");
 
-    const { error } = await supabase
-      .from("staff")
-      .update({ 
-        name: editingStaff.name.trim(), 
-        email: editingStaff.email.trim().toLowerCase(), 
-        role: editingStaff.role, 
-        campus: editingStaff.campus,
-        color: editingStaff.color 
-      })
-      .eq("id", editingStaff.id);
+    try {
+      // 1. Ambil nama asli dari DB berdasarkan ID staf yang sedang diedit
+      const { data: oldStaffData, error: fetchError } = await supabase
+        .from("staff")
+        .select("name")
+        .eq("id", editingStaff.id)
+        .single();
 
-    if (!error) {
-      alert(`Data ${editingStaff.name} berhasil diperbarui!`);
-      setEditingStaff(null); // Kembali ke halaman utama
-      loadStaff();
-    } else {
-      alert("Gagal memperbarui data staf.");
+      if (fetchError) throw new Error("Gagal mengambil data staf lama dari database.");
+
+      // Lakukan .trim() untuk mengantisipasi adanya spasi tidak sengaja
+      const oldName = oldStaffData.name.trim();
+      const newName = editingStaff.name.trim();
+
+      console.log(`Mencoba sinkronisasi nama: dari "${oldName}" ke "${newName}"`);
+
+      // 2. Jika nama berubah, paksa update di tabel activities
+      if (oldName !== newName) {
+        // Kita tambahkan opsi count: 'exact' untuk melihat berapa baris yang ter-update
+        const { count, error: activityError } = await supabase
+          .from("activities")
+          .update({ staff_name: newName })
+          .eq("staff_name", oldName)
+          .select('*', { count: 'exact' }); 
+
+        if (activityError) {
+          console.error("Detail Error Supabase Activities:", activityError);
+          return alert(`Gagal update tabel activities: ${activityError.message}`);
+        }
+
+        console.log(`Berhasil mengubah ${count} baris aktivitas dari "${oldName}" menjadi "${newName}"`);
+      }
+
+      // 3. Jalankan update pada profil master staff
+      const { error: staffError } = await supabase
+        .from("staff")
+        .update({ 
+          name: newName, 
+          email: editingStaff.email.trim().toLowerCase(), 
+          role: editingStaff.role, 
+          campus: editingStaff.campus,
+          color: editingStaff.color 
+        })
+        .eq("id", editingStaff.id);
+
+      if (!staffError) {
+        alert(`Data ${newName} berhasil diperbarui!`);
+        setEditingStaff(null);
+        loadStaff();
+      } else {
+        console.error("Detail Error Supabase Staff:", staffError);
+        alert(`Gagal memperbarui profil staf: ${staffError.message}`);
+      }
+
+    } catch (err) {
+      console.error("Catch Error:", err);
+      alert(`Terjadi kesalahan sistem: ${err.message}`);
     }
   };
 
