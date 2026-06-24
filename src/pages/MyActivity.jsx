@@ -221,17 +221,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
                     transition: "all 0.2s ease"
                   }}
                 >
-                  {/* Badge Priority */}
-                  <span style={{
-                    position: "absolute", top: "20px", right: "20px", fontSize: "11px", fontWeight: 700,
-                    padding: "4px 8px", borderRadius: "20px", textTransform: "uppercase",
-                    backgroundColor: act.is_completed ? "#f5f5f7" : (act.priority === "urgent" ? "rgba(255,59,48,0.1)" : "rgba(0,0,0,0.05)"),
-                    color: act.is_completed ? "#86868b" : (act.priority === "urgent" ? "var(--apple-red)" : "var(--apple-text-sub)"),
-                    textDecoration: act.is_completed ? "line-through" : "none"
-                  }}>
-                    {act.is_completed ? "Selesai" : (act.priority || "normal")}
-                  </span>
-
                   {/* Waktu Kegiatan */}
                   <div 
                     onClick={() => handleToggleCardComplete(act.id, act.is_completed)}
