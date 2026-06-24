@@ -25,15 +25,21 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
 
   const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
-  // Fungsi Toggle Complete langsung dari komponen Card List jika diperlukan
+  // Fungsi Toggle Complete langsung dari komponen Card List (Auto Rendering)
   const handleToggleCardComplete = async (activityId, currentStatus) => {
+    // Jalankan update status terbalik ke Supabase
     const { error } = await supabase
       .from("activities")
       .update({ is_completed: !currentStatus })
       .eq("id", activityId);
 
-    if (!error && onUpdateActivity) {
-      onUpdateActivity();
+    if (!error) {
+      // PENTING: Panggil fungsi fetch ulang dari parent agar data langsung ter-render detik itu juga
+      if (onUpdateActivity) {
+        onUpdateActivity(); 
+      }
+    } else {
+      console.error("Gagal merubah status card:", error);
     }
   };
 

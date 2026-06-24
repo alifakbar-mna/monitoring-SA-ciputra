@@ -68,7 +68,6 @@ function App() {
                 const end = event.end?.dateTime || event.end?.date;
                 if (!start) return null;
 
-                // FIXED: Menghapus properti campus agar tidak dikirim ke tabel activities
                 return {
                   staff_name: staff.name,
                   title: event.summary || "No Title",
@@ -187,24 +186,32 @@ function App() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'activities' },
-        () => { fetchAllActivities(currentUser, session); }
+        () => { 
+          // Memanggil penarik data ulang ketika ada pembaruan baris data di database
+          fetchAllActivities(currentUser, session); 
+        }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, session, fetchAllActivities]);
 
+  // PERBAIKAN UTAMA: Dibuat fleksibel agar bisa menerima perubahan is_completed, title, maupun description secara dinamis
   const handleUpdateActivity = async (updatedAct) => {
     try {
       const { error } = await supabase
         .from("activities")
-        .update({ title: updatedAct.title, description: updatedAct.description })
+        .update({ 
+          title: updatedAct.title, 
+          description: updatedAct.description,
+          is_completed: updatedAct.is_completed // Ditambahkan agar status checkbox diizinkan lolos masuk ke database
+        })
         .eq("id", updatedAct.id);
 
       if (error) throw error;
       setActivities(prev => prev.map(act => act.id === updatedAct.id ? { ...act, ...updatedAct } : act));
     } catch (err) {
-      console.error(err);
+      console.error("Gagal memperbarui aktivitas di basis data global:", err);
     }
   };
 
@@ -291,10 +298,11 @@ function App() {
       return parseInt(parts[0], 10) === currentYear && parseInt(parts[1], 10) === currentMonth;
     });
 
+    // PENTING: Meneruskan trigger pembacaan ulang (onUpdateActivity) ke semua halaman tujuan
     switch (currentPage) {
       case "dashboard": return <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
-      case "all_activity": return <AllActivity activities={filteredActivities} staffList={staffList} onUpdateActivity={handleUpdateActivity} currentMonth={currentMonth} currentYear={currentYear} />;
-      case "my_activity": return <MyActivity activities={filteredActivities} selectedStaff={currentUser.name} currentMonth={currentMonth} currentYear={currentYear} onOpenAddModal={() => setIsModalOpen(true)} />;
+      case "all_activity": return <AllActivity activities={filteredActivities} staffList={staffList} onUpdateActivity={() => fetchAllActivities(currentUser, session)} currentMonth={currentMonth} currentYear={currentYear} />;
+      case "my_activity": return <MyActivity activities={filteredActivities} selectedStaff={currentUser.name} currentMonth={currentMonth} currentYear={currentYear} onOpenAddModal={() => setIsModalOpen(true)} onUpdateActivity={() => fetchAllActivities(currentUser, session)} />;
       case "admin_panel": return currentUser.role === 'admin' ? <AdminPanel /> : <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
       default: return <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
     }
