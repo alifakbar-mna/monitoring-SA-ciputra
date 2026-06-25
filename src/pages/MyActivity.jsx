@@ -8,9 +8,9 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [targetDate, setTargetDate] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // State Fitur Assign To (Sekarang konsisten menyimpan EMAIL)
+  // State Fitur Assign To (Menyimpan Teks Email yang Diketik Manual)
   const [assignType, setAssignType] = useState("self"); 
-  const [targetStaffEmail, setTargetStaffEmail] = useState(""); // Mengubah name menjadi email
+  const [targetStaffEmail, setTargetStaffEmail] = useState(""); // Menyimpan email hasil ketikan user
 
   // State Manajemen Aksi Edit & Delete Modal
   const [editingActivity, setEditingActivity] = useState(null); 
@@ -39,21 +39,23 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   }, [selectedStaff, staffList]);
 
   /**
-   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain yang Ditargetkan):
-   * Mencari nama lengkap staff tujuan berdasarkan `targetStaffEmail` yang dipilih di dropdown.
+   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain):
+   * Mencari nama lengkap staff tujuan berdasarkan teks `targetStaffEmail` yang diketik manual.
+   * Jika email tersebut tidak ditemukan di `staffList`, teks sebelum '@' akan dijadikan nama cadangan.
    */
   const targetStaffName = useMemo(() => {
-    if (!targetStaffEmail) return "";
+    const cleanedEmail = targetStaffEmail.trim().toLowerCase();
+    if (!cleanedEmail) return "";
 
     const foundStaff = staffList.find(
-      (s) => s && typeof s === "object" && s.email === targetStaffEmail
+      (s) => s && typeof s === "object" && s.email?.toLowerCase() === cleanedEmail
     );
 
     if (foundStaff && foundStaff.name) {
       return foundStaff.name;
     }
 
-    return targetStaffEmail.includes("@") ? targetStaffEmail.split("@")[0] : targetStaffEmail;
+    return cleanedEmail.includes("@") ? cleanedEmail.split("@")[0] : cleanedEmail;
   }, [targetStaffEmail, staffList]);
 
 
@@ -155,14 +157,16 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
 
-    // Menentukan nama lengkap penugasan target berdasarkan pilihan tipe assign
     let finalAssignee = currentStaffName;
     
     if (assignType === "other") {
       if (!targetStaffEmail.trim()) {
-        return alert("Silakan pilih staff tujuan terlebih dahulu!");
+        return alert("Silakan isi alamat email staff tujuan terlebih dahulu!");
       }
-      // Menggunakan hasil resolusi nama target dari targetStaffName
+      if (!targetStaffEmail.includes("@")) {
+        return alert("Format email tidak valid! Pastikan menggunakan karakter '@'.");
+      }
+      // Nama diambil dari hasil pencarian relasi email di targetStaffName
       finalAssignee = targetStaffName;
     }
 
@@ -209,7 +213,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
           }
 
           return {
-            staff_name: finalAssignee, // Nama Lengkap asli masuk ke database Supabase
+            staff_name: finalAssignee, 
             title: item.title || "Tanpa Judul",
             activity_date: targetDate,
             start_time: item.start_time || "08:00",
@@ -302,21 +306,21 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
             </select>
           </div>
 
-          {/* PERUBAHAN UTAMA: Dropdown memetakan data dengan Value berupa Email */}
+          {/* PERUBAHAN UTAMA: Input Teks bertipe Email dengan Placeholder sesuai keinginanmu */}
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
-              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Pilih Email Anggota:</label>
-              {staffList.length > 0 ? (
-                <select value={targetStaffEmail} onChange={e => setTargetStaffEmail(e.target.value)} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", backgroundColor: "#fff" }}>
-                  <option value="">-- Pilih Email Staff --</option>
-                  {staffList
-                    .filter(s => typeof s === 'object' && s.email !== selectedStaff)
-                    .map(s => (
-                      <option key={s.email} value={s.email}>{s.name} ({s.email})</option>
-                  ))}
-                </select>
-              ) : (
-                <input type="text" placeholder="Ketik email lengkap staff tujuan..." value={targetStaffEmail} onChange={e => setTargetStaffEmail(e.target.value)} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px" }} />
+              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Email Staff Tujuan:</label>
+              <input 
+                type="email" 
+                placeholder="Silahkan tulis email yg ingin dituju..." 
+                value={targetStaffEmail} 
+                onChange={e => setTargetStaffEmail(e.target.value)} 
+                style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", outline: "none" }} 
+              />
+              {targetStaffEmail.trim() && (
+                <span style={{ fontSize: "11px", color: "#0071e3", fontStyle: "italic" }}>
+                  Terdeteksi sebagai: <strong>{targetStaffName}</strong>
+                </span>
               )}
             </div>
           )}
