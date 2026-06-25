@@ -29,7 +29,12 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
     return safeActivities
       .filter(act => {
-        if (!act || act.staff_name !== selectedStaff) return false;
+        // Loloskan jika staff_name cocok, ATAU jika deskripsinya mengandung tanda ditugaskan oleh Anda
+        const isAssignedByMe = act.description && act.description.includes(`Ditugaskan oleh ${selectedStaff}`);
+
+        if (act.staff_name !== selectedStaff && !isAssignedByMe) {
+          return false;
+        }
         
         if (dateFilterType === "Hari Ini") {
           return act.activity_date === todayStr;
@@ -157,16 +162,24 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         const jsonString = match[1].trim();
         const todoItems = JSON.parse(jsonString);
 
-        const insertData = todoItems.map(item => ({
-          staff_name: finalAssignee, 
-          title: item.title || "Tanpa Judul",
-          activity_date: targetDate,
-          start_time: item.start_time || "08:00",
-          end_time: item.end_time || "09:00",
-          is_completed: item.is_completed ?? false,
-          source: "manual",
-          description: item.description || `Dibuat otomatis oleh Asisten Gemini AI.`
-        }));
+        const insertData = todoItems.map(item => {
+          // Menyematkan teks penanda 'Ditugaskan oleh' agar lolos penyaringan matriks utama pembuat tugas
+          let baseDesc = item.description || "Dibuat otomatis oleh Asisten Gemini AI.";
+          if (finalAssignee !== selectedStaff) {
+            baseDesc = `${baseDesc} (Ditugaskan oleh ${selectedStaff})`;
+          }
+
+          return {
+            staff_name: finalAssignee, 
+            title: item.title || "Tanpa Judul",
+            activity_date: targetDate,
+            start_time: item.start_time || "08:00",
+            end_time: item.end_time || "09:00",
+            is_completed: item.is_completed ?? false,
+            source: "manual",
+            description: baseDesc
+          };
+        });
 
         const { error } = await supabase.from("activities").insert(insertData);
         if (error) throw error;
@@ -189,7 +202,6 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         .filter-btn { padding: 6px 14px; border-radius: 8px; border: 1px solid #d2d2d7; background: #fff; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s ease; }
         .filter-btn.active { background: #0071e3; color: #fff; border-color: #0071e3; }
         
-        /* Gaya baru untuk tombol tulisan Edit & Hapus */
         .text-action-btn { background: none; border: none; cursor: pointer; font-size: 12px; font-weight: 500; padding: 4px 8px; border-radius: 6px; transition: all 0.2s ease; }
         .text-action-btn.edit { color: #0071e3; }
         .text-action-btn.edit:hover { background: #f2f7ff; }
@@ -208,7 +220,6 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
           </p>
         </div>
         
-        {/* Tombol Tambah Tugas Baru Bawaan */}
         <button 
           onClick={() => {
             if (typeof onOpenAddModal === 'function') {
@@ -305,7 +316,6 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
                       {act.is_completed ? "✅" : "🕒"} {formatTime(act.start_time)} - {formatTime(act.end_time)}
                     </div>
 
-                    {/* PERUBAHAN: Menggunakan teks tulisan biasa "Edit" & "Hapus" */}
                     {act.source === "manual" && (
                       <div style={{ display: "flex", gap: "4px" }}>
                         <button className="text-action-btn edit" onClick={() => { setEditingActivity({ ...act }); setIsEditModalOpen(true); }}>Edit</button>
@@ -313,6 +323,13 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
                       </div>
                     )}
                   </div>
+
+                  {/* Label Info Indikator Delegasi Orang Lain */}
+                  {act.staff_name !== selectedStaff && (
+                    <div style={{ backgroundColor: "#f2f7ff", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", color: "#0071e3", marginBottom: "8px", fontWeight: "600", display: "inline-block" }}>
+                      👤 Ditugaskan ke: {act.staff_name}
+                    </div>
+                  )}
 
                   <h3 style={{ margin: "0 0 10px 0", fontSize: "17px", fontWeight: 600, textDecoration: act.is_completed ? "line-through" : "none", color: act.is_completed ? "#86868b" : "var(--apple-text-main)" }}>{act.title}</h3>
                   <p style={{ color: act.is_completed ? "#86868b" : "#424245", fontSize: "13px", lineHeight: "1.4", marginBottom: "20px", textDecoration: act.is_completed ? "line-through" : "none" }}>{act.description || "Tidak ada deskripsi rinci."}</p>
