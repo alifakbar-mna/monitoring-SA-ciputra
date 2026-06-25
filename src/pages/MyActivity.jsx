@@ -39,23 +39,26 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   }, [selectedStaff, staffList]);
 
   /**
-   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain):
+   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain) - PERBAIKAN KETAT:
    * Mencari nama lengkap staff tujuan berdasarkan teks `targetStaffEmail` yang diketik manual.
-   * Jika email tersebut tidak ditemukan di `staffList`, teks sebelum '@' akan dijadikan nama cadangan.
+   * WAJIB cocok dengan database staffList. Jika tidak ada, kembalikan nilai null/kosong.
    */
   const targetStaffName = useMemo(() => {
     const cleanedEmail = targetStaffEmail.trim().toLowerCase();
     if (!cleanedEmail) return "";
 
+    // Mencocokkan dengan data tabel staff / staffList secara riil
     const foundStaff = staffList.find(
       (s) => s && typeof s === "object" && s.email?.toLowerCase() === cleanedEmail
     );
 
+    // Jika ditemukan, kembalikan nama aslinya dari database staff (Contoh: "Alif test", "Bu Novi")
     if (foundStaff && foundStaff.name) {
       return foundStaff.name;
     }
 
-    return cleanedEmail.includes("@") ? cleanedEmail.split("@")[0] : cleanedEmail;
+    // JIKA TIDAK COCOK, JANGAN DIPOTONG! Kembalikan null agar sistem tahu ini tidak valid.
+    return null;
   }, [targetStaffEmail, staffList]);
 
 
@@ -153,6 +156,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     }
   };
 
+  // LOGIKA KIRIM TUGAS DENGAN VALIDASI DATABASE KETAT
   const handleSendAiMessage = async () => {
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
@@ -165,18 +169,13 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         return alert("Silakan isi alamat email staff tujuan terlebih dahulu!");
       }
 
-      // Validasi ketat: Mencari data staff berdasarkan email di dalam staffList
-      const matchedStaff = staffList.find(
-        (s) => s && typeof s === "object" && s.email?.toLowerCase() === cleanedEmail
-      );
-
-      // Jika email tidak ditemukan di database/tabel staff, hentikan proses
-      if (!matchedStaff || !matchedStaff.name) {
-        return alert("❌ Email tidak terdaftar di database staff. Mohon periksa kembali email yang Anda masukkan!");
+      // Validasi: Jika hasil pencarian di database (targetStaffName) bernilai null/tidak ketemu
+      if (!targetStaffName) {
+        return alert("❌ Email tidak ditemukan! Alamat email tersebut tidak terdaftar di database staff kami. Silakan periksa kembali.");
       }
 
-      // Jika ada, gunakan properti 'name' dari tabel staff tersebut
-      finalAssignee = matchedStaff.name;
+      // Jika lolos validasi, gunakan nama asli hasil lookup database staff
+      finalAssignee = targetStaffName;
     }
 
     const updatedHistory = [
@@ -222,7 +221,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
           }
 
           return {
-            staff_name: finalAssignee, // Nama resmi dari tabel staff berhasil masuk kesini
+            staff_name: finalAssignee, // Nama resmi dari database staff masuk ke field database activities
             title: item.title || "Tanpa Judul",
             activity_date: targetDate,
             start_time: item.start_time || "08:00",
@@ -302,7 +301,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
       <div style={{ display: "flex", gap: "30px", alignItems: "flex-start", flexWrap: "wrap" }}>
         
-        {/* PANEL GEMINI */}
+        {/* PANEL GEMINI ASISTEN */}
         <div className="glass-panel" style={{ flex: "1 1 350px", backgroundColor: "#fff", borderRadius: "14px", padding: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
           <h3 style={{ margin: "0 0 5px 0", fontSize: "18px", fontWeight: 700 }}>🪄 Gemini To-Do Asisten</h3>
           <p style={{ fontSize: "12px", color: "var(--apple-text-sub)", margin: "0 0 15px 0" }}>Ketik instruksi kegiatan, konfirmasi drafnya, lalu ketik "Setuju" untuk menyimpan.</p>
@@ -315,7 +314,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
             </select>
           </div>
 
-          {/* PERUBAHAN UTAMA: Input Teks bertipe Email dengan Placeholder sesuai keinginanmu */}
+          {/* INPUT EMAIL DENGAN FEEDBACK VISUAL DATABASE KETAT */}
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
               <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Email Staff Tujuan:</label>
@@ -326,10 +325,18 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
                 onChange={e => setTargetStaffEmail(e.target.value)} 
                 style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", outline: "none" }} 
               />
+              
+              {/* Logika Deteksi Feedback Visual */}
               {targetStaffEmail.trim() && (
-                <span style={{ fontSize: "11px", color: "#0071e3", fontStyle: "italic" }}>
-                  Terdeteksi sebagai: <strong>{targetStaffName}</strong>
-                </span>
+                targetStaffName ? (
+                  <span style={{ fontSize: "11px", color: "#34c759", fontWeight: "500" }}>
+                    ✅ Terdeteksi sebagai: <strong>{targetStaffName}</strong>
+                  </span>
+                ) : (
+                  <span style={{ fontSize: "11px", color: "#ff3b30", fontWeight: "500" }}>
+                    ❌ Email tidak terdaftar di database staff!
+                  </span>
+                )
               )}
             </div>
           )}
