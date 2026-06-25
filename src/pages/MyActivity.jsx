@@ -45,21 +45,20 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
    */
   const targetStaffName = useMemo(() => {
     const cleanedEmail = targetStaffEmail.trim().toLowerCase();
-    if (!cleanedEmail) return "";
+    if (!cleanedEmail) return null;
 
-    // Mencocokkan dengan data tabel staff / staffList secara riil
-    const foundStaff = staffList.find(
-      (s) => s && typeof s === "object" && s.email?.toLowerCase() === cleanedEmail
+    // Mencari kecocokan email langsung dari data tabel staff Supabase
+    const foundStaff = dbStaffReferences.find(
+      (s) => s && s.email?.toLowerCase() === cleanedEmail
     );
 
-    // Jika ditemukan, kembalikan nama aslinya dari database staff (Contoh: "Alif test", "Bu Novi")
+    // Jika ditemukan, kembalikan nama resminya (Contoh: "Kak Dinda", "Pak Yosia")
     if (foundStaff && foundStaff.name) {
       return foundStaff.name;
     }
 
-    // JIKA TIDAK COCOK, JANGAN DIPOTONG! Kembalikan null agar sistem tahu ini tidak valid.
     return null;
-  }, [targetStaffEmail, staffList]);
+  }, [targetStaffEmail, dbStaffReferences]);
 
 
   // LOGIKA PENYARINGAN DATA AKTIVITAS
