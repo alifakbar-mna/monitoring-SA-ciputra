@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { supabase } from "../supabase";
 
 export default function MyActivity({ activities = [], selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity, staffList = [] }) {
@@ -12,6 +12,9 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [assignType, setAssignType] = useState("self"); 
   const [targetStaffEmail, setTargetStaffEmail] = useState(""); // Menyimpan email hasil ketikan user
 
+  // State Referensi Data Staff Langsung dari Tabel Database Staff
+  const [dbStaffReferences, setDbStaffReferences] = useState([]);
+
   // State Manajemen Aksi Edit & Delete Modal
   const [editingActivity, setEditingActivity] = useState(null); 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -21,14 +24,35 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [customStartDate, setCustomStartDate] = useState("");
 
   /**
+   * 🔄 AMBIL DATA REFERENSI EMAIL DARI TABEL STAFF SUPABASE
+   * Mengambil data asli agar fitur pengetikan email untuk orang lain bisa divalidasi dengan akurat.
+   */
+  useEffect(() => {
+    const fetchRealStaffData = async () => {
+      const { data, error } = await supabase
+        .from("staff")
+        .select("name, email");
+      
+      if (!error && data) {
+        setDbStaffReferences(data);
+      } else {
+        console.error("Gagal memuat referensi data email dari tabel staff:", error);
+      }
+    };
+    
+    fetchRealStaffData();
+  }, []);
+
+  /**
    * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri):
-   * Mengambil nama lengkap staff dari array objek `staffList` berdasarkan email di `selectedStaff`.
+   * Mengambil nama lengkap staff dari array objek `dbStaffReferences` berdasarkan email di `selectedStaff`.
    */
   const currentStaffName = useMemo(() => {
     if (!selectedStaff) return "";
     
-    const foundStaff = staffList.find(
-      (s) => s && typeof s === "object" && s.email === selectedStaff
+    const cleanedSelected = selectedStaff.trim().toLowerCase();
+    const foundStaff = dbStaffReferences.find(
+      (s) => s && s.email?.toLowerCase() === cleanedSelected
     );
 
     if (foundStaff && foundStaff.name) {
@@ -36,27 +60,28 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     }
     
     return selectedStaff.includes("@") ? selectedStaff.split("@")[0] : selectedStaff;
-  }, [selectedStaff, staffList]);
+  }, [selectedStaff, dbStaffReferences]);
 
   /**
-   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain) - PERBAIKAN KETAT:
+   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain) - SOLUSI FIX AKURAT:
    * Mencari nama lengkap staff tujuan berdasarkan teks `targetStaffEmail` yang diketik manual.
-   * WAJIB cocok dengan database staffList. Jika tidak ada, kembalikan nilai null/kosong.
+   * COCOK LANGSUNG DENGAN DATA REAL TABEL STAFF SUPABASE.
    */
   const targetStaffName = useMemo(() => {
     const cleanedEmail = targetStaffEmail.trim().toLowerCase();
     if (!cleanedEmail) return null;
 
-    // Mencari kecocokan email langsung dari data tabel staff Supabase
+    // Mencari kecocokan email langsung dari data baris tabel staff
     const foundStaff = dbStaffReferences.find(
       (s) => s && s.email?.toLowerCase() === cleanedEmail
     );
 
-    // Jika ditemukan, kembalikan nama resminya (Contoh: "Kak Dinda", "Pak Yosia")
+    // Jika ditemukan, kembalikan nama aslinya dari database staff (Contoh: "Kak Dinda", "Pak Yosia")
     if (foundStaff && foundStaff.name) {
       return foundStaff.name;
     }
 
+    // JIKA TIDAK COCOK kembalikan null agar sistem tahu email ini tidak terdaftar
     return null;
   }, [targetStaffEmail, dbStaffReferences]);
 
@@ -168,12 +193,12 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         return alert("Silakan isi alamat email staff tujuan terlebih dahulu!");
       }
 
-      // Validasi: Jika hasil pencarian di database (targetStaffName) bernilai null/tidak ketemu
+      // Validasi ketat: Jika email tidak ditemukan di tabel staff Supabase
       if (!targetStaffName) {
         return alert("❌ Email tidak ditemukan! Alamat email tersebut tidak terdaftar di database staff kami. Silakan periksa kembali.");
       }
 
-      // Jika lolos validasi, gunakan nama asli hasil lookup database staff
+      // Jika lolos validasi, gunakan nama resmi hasil lookup database staff (Misal: "Kak Dinda")
       finalAssignee = targetStaffName;
     }
 
@@ -220,7 +245,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
           }
 
           return {
-            staff_name: finalAssignee, // Nama resmi dari database staff masuk ke field database activities
+            staff_name: finalAssignee, // Nama resmi asli (Misal: "Kak Dinda") masuk ke field staff_name tabel activities
             title: item.title || "Tanpa Judul",
             activity_date: targetDate,
             start_time: item.start_time || "08:00",
@@ -313,7 +338,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
             </select>
           </div>
 
-          {/* INPUT EMAIL DENGAN FEEDBACK VISUAL DATABASE KETAT */}
+          {/* INPUT EMAIL DENGAN FEEDBACK VISUAL REAL-TIME */}
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
               <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Email Staff Tujuan:</label>
@@ -325,7 +350,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
                 style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", outline: "none" }} 
               />
               
-              {/* Logika Deteksi Feedback Visual */}
+              {/* Logika Deteksi Feedback Visual Langsung dari Database */}
               {targetStaffEmail.trim() && (
                 targetStaffName ? (
                   <span style={{ fontSize: "11px", color: "#34c759", fontWeight: "500" }}>
