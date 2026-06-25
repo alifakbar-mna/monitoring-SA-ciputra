@@ -186,94 +186,110 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
   // LOGIKA KIRIM TUGAS DENGAN VALIDASI DATABASE KETAT
   const handleSendAiMessage = async () => {
-    if (!inputMessage.trim()) return;
-    if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
+  if (!inputMessage.trim()) return;
+  if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
 
-    let finalAssignee = currentStaffName;
-    
-    if (assignType === "other") {
-      const cleanedEmail = targetStaffEmail.trim().toLowerCase();
-      if (!cleanedEmail) {
-        return alert("Silakan isi alamat email staff tujuan terlebih dahulu!");
-      }
-
-      // Validasi ketat: Jika email tidak ditemukan di tabel staff Supabase
-      if (!targetStaffName) {
-        return alert("❌ Email tidak ditemukan! Alamat email tersebut tidak terdaftar di database staff kami. Silakan periksa kembali.");
-      }
-
-      // Jika lolos validasi, gunakan nama resmi hasil lookup database staff (Misal: "Kak Dinda")
-      finalAssignee = targetStaffName;
+  let finalAssignee = currentStaffName;
+  
+  if (assignType === "other") {
+    const cleanedEmail = targetStaffEmail.trim().toLowerCase();
+    if (!cleanedEmail) {
+      return alert("Silakan isi alamat email staff tujuan terlebih dahulu!");
     }
 
-    const updatedHistory = [
-      ...chatHistory,
-      {
-        role: "user",
-        parts: [{ text: `[Assignee Target: ${finalAssignee}] ${inputMessage.trim()}` }]
-      }
-    ];
-
-    setChatHistory(updatedHistory);
-    const userMessageCopy = inputMessage.trim();
-    setInputMessage("");
     setIsAiLoading(true);
 
-    try {
-      const res = await fetch("/api/generate-todo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: `Buatkan to-do list untuk staff bernama: ${finalAssignee}. Detail instruksi: ${userMessageCopy}`,
-          chatHistory: updatedHistory
-        })
+    // 🔥 FIX DIRECT QUERY: Cek keberadaan email langsung ke database saat tombol diklik
+    const { data: verifiedStaff, error: checkError } = await supabase
+      .from("staff")
+      .select("name")
+      .eq("email", cleanedEmail)
+      .maybeSingle();
+
+    if (checkError) {
+      setIsAiLoading(false);
+      return alert("Terjadi masalah koneksi database: " + checkError.message);
+    }
+
+    // Jika record database tidak mengembalikan baris apa pun
+    if (!verifiedStaff) {
+      setIsAiLoading(false);
+      return alert("❌ Email tidak ditemukan! Alamat email tersebut tidak terdaftar di database staff kami. Silakan periksa kembali.");
+    }
+
+    // Gunakan nama resmi dari database (Misal: "Kak Birgita")
+    finalAssignee = verifiedStaff.name;
+  }
+
+  // --- Mulai Alur Pengiriman ke Gemini AI ---
+  const updatedHistory = [
+    ...chatHistory,
+    {
+      role: "user",
+      parts: [{ text: `[Assignee Target: ${finalAssignee}] ${inputMessage.trim()}` }]
+    }
+  ];
+
+  setChatHistory(updatedHistory);
+  const userMessageCopy = inputMessage.trim();
+  setInputMessage("");
+  setIsAiLoading(true);
+
+  try {
+    const res = await fetch("/api/generate-todo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: `Buatkan to-do list untuk staff bernama: ${finalAssignee}. Detail instruksi: ${userMessageCopy}`,
+        chatHistory: updatedHistory
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Gagal memanggil API Gemini");
+
+    const aiText = data?.text || "";
+    setChatHistory(prev => [...prev, { role: "model", parts: [{ text: aiText }] }]);
+
+    if (aiText.includes("<DATA>")) {
+      const match = aiText.match(/<DATA>([\s\S]*?)<\/DATA>/);
+      if (!match?.[1]) throw new Error("Format DATA dari Gemini tidak valid");
+
+      const jsonString = match[1].trim();
+      const todoItems = JSON.parse(jsonString);
+
+      const insertData = todoItems.map(item => {
+        let baseDesc = item.description || "Dibuat otomatis oleh Asisten Gemini AI.";
+        if (finalAssignee !== currentStaffName) {
+          baseDesc = `${baseDesc} (Ditugaskan oleh ${currentStaffName})`;
+        }
+
+        return {
+          staff_name: finalAssignee,
+          title: item.title || "Tanpa Judul",
+          activity_date: targetDate,
+          start_time: item.start_time || "08:00",
+          end_time: item.end_time || "09:00",
+          is_completed: item.is_completed ?? false,
+          source: "manual",
+          description: baseDesc
+        };
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Gagal memanggil API Gemini");
+      const { error } = await supabase.from("activities").insert(insertData);
+      if (error) throw error;
 
-      const aiText = data?.text || "";
-      setChatHistory(prev => [...prev, { role: "model", parts: [{ text: aiText }] }]);
-
-      if (aiText.includes("<DATA>")) {
-        const match = aiText.match(/<DATA>([\s\S]*?)<\/DATA>/);
-        if (!match?.[1]) throw new Error("Format DATA dari Gemini tidak valid");
-
-        const jsonString = match[1].trim();
-        const todoItems = JSON.parse(jsonString);
-
-        const insertData = todoItems.map(item => {
-          let baseDesc = item.description || "Dibuat otomatis oleh Asisten Gemini AI.";
-          if (finalAssignee !== currentStaffName) {
-            baseDesc = `${baseDesc} (Ditugaskan oleh ${currentStaffName})`;
-          }
-
-          return {
-            staff_name: finalAssignee, // Nama resmi asli (Misal: "Kak Dinda") masuk ke field staff_name tabel activities
-            title: item.title || "Tanpa Judul",
-            activity_date: targetDate,
-            start_time: item.start_time || "08:00",
-            end_time: item.end_time || "09:00",
-            is_completed: item.is_completed ?? false,
-            source: "manual",
-            description: baseDesc
-          };
-        });
-
-        const { error } = await supabase.from("activities").insert(insertData);
-        if (error) throw error;
-
-        alert(`🎉 Sukses! ${todoItems.length} To-Do List berhasil disimpan untuk ${finalAssignee}.`);
-        setChatHistory([]);
-        if (onUpdateActivity) onUpdateActivity();
-      }
-    } catch (err) {
-      console.error(err);
-      alert(err.message || "Terjadi kesalahan");
-    } finally {
-      setIsAiLoading(false);
+      alert(`🎉 Sukses! ${todoItems.length} To-Do List berhasil disimpan untuk ${finalAssignee}.`);
+      setChatHistory([]);
+      if (onUpdateActivity) onUpdateActivity();
     }
-  };
+  } catch (err) {
+    console.error(err);
+    alert(err.message || "Terjadi kesalahan");
+  } finally {
+    setIsAiLoading(false);
+  }
+};
 
   return (
     <div style={{ padding: "20px 40px" }}>
