@@ -20,6 +20,33 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [dateFilterType, setDateFilterType] = useState("Semua"); 
   const [customStartDate, setCustomStartDate] = useState("");
 
+  /**
+   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF:
+   * Mencari tahu nama lengkap staff asli berdasarkan email yang sedang aktif di `selectedStaff`.
+   * Jika staffList berbentuk array of object [{ name: "...", email: "..." }], kita cari yang cocok.
+   * Jika tidak ditemukan atau staffList hanya array string biasa, kita gunakan fallback `selectedStaff` itu sendiri.
+   */
+  const currentStaffName = useMemo(() => {
+    if (!selectedStaff) return "";
+    
+    // Jika selectedStaff sudah berupa Email (mengandung '@')
+    if (selectedStaff.includes("@")) {
+      const foundStaff = staffList.find(
+        (s) => s && typeof s === "object" && s.email === selectedStaff
+      );
+      if (foundStaff && foundStaff.name) {
+        return foundStaff.name;
+      }
+      
+      // Kasus Fallback: jika tidak ada object, potong string sebelum '@' sebagai nama sementara
+      return selectedStaff.split("@")[0];
+    }
+    
+    // Jika yang dioper dari awal memang sudah nama lengkap
+    return selectedStaff;
+  }, [selectedStaff, staffList]);
+
+
   // LOGIKA PENYARINGAN DATA AKTIVITAS
   const filteredActivities = useMemo(() => {
     const todayObj = new Date();
@@ -29,10 +56,11 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
     return safeActivities
       .filter(act => {
-        // Loloskan jika staff_name cocok, ATAU jika deskripsinya mengandung tanda ditugaskan oleh Anda
-        const isAssignedByMe = act.description && act.description.includes(`Ditugaskan oleh ${selectedStaff}`);
+        // COCOKKAN MENGGUNAKAN HASIL RESOLUSI NAMA (currentStaffName)
+        const isAssignedToMe = act.staff_name === currentStaffName;
+        const isAssignedByMe = act.description && act.description.includes(`Ditugaskan oleh ${currentStaffName}`);
 
-        if (act.staff_name !== selectedStaff && !isAssignedByMe) {
+        if (!isAssignedToMe && !isAssignedByMe) {
           return false;
         }
         
@@ -50,7 +78,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         }
         return (a.activity_date || "") > (b.activity_date || "") ? 1 : -1;
       });
-  }, [activities, selectedStaff, dateFilterType, customStartDate]);
+  }, [activities, currentStaffName, dateFilterType, customStartDate]);
 
   const formatTime = (timeStr) => {
     if (!timeStr || !timeStr.includes(":")) return timeStr || "";
@@ -118,10 +146,12 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
 
-    let finalAssignee = selectedStaff;
+    // Set target assignee dasar (Nama lengkap, bukan email)
+    let finalAssignee = currentStaffName;
+    
     if (assignType === "other") {
       if (!targetStaffName.trim()) {
-        return alert("Silakan pilih atau masukkan nama/email staff tujuan terlebih dahulu!");
+        return alert("Silakan pilih atau masukkan nama staff tujuan terlebih dahulu!");
       }
       finalAssignee = targetStaffName.trim();
     }
@@ -163,10 +193,9 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         const todoItems = JSON.parse(jsonString);
 
         const insertData = todoItems.map(item => {
-          // Menyematkan teks penanda 'Ditugaskan oleh' agar lolos penyaringan matriks utama pembuat tugas
           let baseDesc = item.description || "Dibuat otomatis oleh Asisten Gemini AI.";
-          if (finalAssignee !== selectedStaff) {
-            baseDesc = `${baseDesc} (Ditugaskan oleh ${selectedStaff})`;
+          if (finalAssignee !== currentStaffName) {
+            baseDesc = `${baseDesc} (Ditugaskan oleh ${currentStaffName})`;
           }
 
           return {
@@ -214,7 +243,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
       {/* HEADER UTAMA */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "15px" }}>
         <div>
-          <h2 style={{ fontSize: "28px", fontWeight: 700, letterSpacing: "-0.5px", margin: 0 }}>Aktivitas {selectedStaff}</h2>
+          <h2 style={{ fontSize: "28px", fontWeight: 700, letterSpacing: "-0.5px", margin: 0 }}>Aktivitas {currentStaffName}</h2>
           <p style={{ color: "var(--apple-text-sub)", fontSize: "14px", margin: "5px 0 0 0" }}>
             Menampilkan list tugas personal pada bulan <strong>{monthNames[currentMonth - 1]} {currentYear}</strong>.
           </p>
@@ -258,23 +287,26 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
             <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-main)" }}>Penugasan Tugas (*Assign To):</label>
             <select value={assignType} onChange={e => { setAssignType(e.target.value); setTargetStaffName(""); }} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", backgroundColor: "#fff" }}>
-              <option value="self">Diri Sendiri ({selectedStaff})</option>
+              <option value="self">Diri Sendiri ({currentStaffName})</option>
               <option value="other">Assign ke Orang Lain</option>
             </select>
           </div>
 
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
-              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Pilih Nama / Masukkan Email:</label>
+              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Pilih Nama Lengkap Anggota:</label>
               {staffList.length > 0 ? (
                 <select value={targetStaffName} onChange={e => setTargetStaffName(e.target.value)} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", backgroundColor: "#fff" }}>
                   <option value="">-- Pilih Anggota Staff --</option>
-                  {staffList.filter(s => s !== selectedStaff).map(st => (
-                    <option key={st} value={st}>{st}</option>
+                  {staffList
+                    .map(s => typeof s === 'object' ? s.name : s)
+                    .filter(name => name !== currentStaffName)
+                    .map(name => (
+                      <option key={name} value={name}>{name}</option>
                   ))}
                 </select>
               ) : (
-                <input type="text" placeholder="Ketik nama lengkap atau email tujuan..." value={targetStaffName} onChange={e => setTargetStaffName(e.target.value)} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px" }} />
+                <input type="text" placeholder="Ketik nama lengkap staff tujuan..." value={targetStaffName} onChange={e => setTargetStaffName(e.target.value)} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px" }} />
               )}
             </div>
           )}
@@ -324,8 +356,8 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
                     )}
                   </div>
 
-                  {/* Label Info Indikator Delegasi Orang Lain */}
-                  {act.staff_name !== selectedStaff && (
+                  {/* Label Visual Indikator Delegasi */}
+                  {act.staff_name !== currentStaffName && (
                     <div style={{ backgroundColor: "#f2f7ff", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", color: "#0071e3", marginBottom: "8px", fontWeight: "600", display: "inline-block" }}>
                       👤 Ditugaskan ke: {act.staff_name}
                     </div>
