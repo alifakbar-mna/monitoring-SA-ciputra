@@ -77,17 +77,15 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     const cleanedEmail = targetStaffEmail.trim().toLowerCase();
     if (!cleanedEmail) return null;
 
-    // Mencari kecocokan email langsung dari data baris tabel staff
+    // Mencari dengan proteksi ekstra .trim() pada data dari database
     const foundStaff = dbStaffReferences.find(
-      (s) => s && s.email?.toLowerCase() === cleanedEmail
+      (s) => s && s.email && s.email.trim().toLowerCase() === cleanedEmail
     );
 
-    // Jika ditemukan, kembalikan nama aslinya dari database staff (Contoh: "Kak Dinda", "Pak Yosia")
     if (foundStaff && foundStaff.name) {
       return foundStaff.name;
     }
 
-    // JIKA TIDAK COCOK kembalikan null agar sistem tahu email ini tidak terdaftar
     return null;
   }, [targetStaffEmail, dbStaffReferences]);
 
