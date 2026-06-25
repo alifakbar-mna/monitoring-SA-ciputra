@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { supabase } from "./supabase";
+import { supabase } from "../src/supabase";
 
 export default function MyActivity({ activities = [], selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity, staffList = [] }) {
   // State untuk Asisten AI Gemini
