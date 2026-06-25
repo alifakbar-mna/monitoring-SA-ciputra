@@ -29,14 +29,20 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
    */
   useEffect(() => {
     const fetchRealStaffData = async () => {
+      // Tambahkan log untuk memastikan fungsi ini berjalan
+      console.log("Memulai fetching data dari tabel 'staff'...");
+      
       const { data, error } = await supabase
         .from("staff")
         .select("name, email");
       
-      if (!error && data) {
+      if (error) {
+        console.error("❌ ERROR SUPABASE:", error.message);
+      }
+
+      if (data) {
+        console.log("✅ DATA STAFF DARI DATABASE:", data);
         setDbStaffReferences(data);
-      } else {
-        console.error("Gagal memuat referensi data email dari tabel staff:", error);
       }
     };
     
