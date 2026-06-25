@@ -1,19 +1,18 @@
 import React, { useState, useMemo } from "react";
 import { supabase } from "../supabase";
 
-// PASTIKAN: menambahkan staffList ke dalam list props di bawah ini jika dioper dari App.jsx
-export default function MyActivity({ activities, selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity, staffList = [] }) {
+export default function MyActivity({ activities = [], selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity, staffList = [] }) {
   // State untuk Asisten AI Gemini
   const [inputMessage, setInputMessage] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
   const [targetDate, setTargetDate] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // STATE BARU: Fitur Assign To (Diri sendiri atau Anggota Staff Lain)
-  const [assignType, setAssignType] = useState("self"); // "self" | "other"
+  // State Fitur Assign To
+  const [assignType, setAssignType] = useState("self"); 
   const [targetStaffName, setTargetStaffName] = useState("");
 
-  // STATE BARU: Manajemen Aksi Edit & Delete Modal
+  // State Manajemen Aksi Edit & Delete Modal
   const [editingActivity, setEditingActivity] = useState(null); 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -21,14 +20,16 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
   const [dateFilterType, setDateFilterType] = useState("Semua"); 
   const [customStartDate, setCustomStartDate] = useState("");
 
-  // LOGIKA PENYARINGAN DATA AKTIVITAS (Tetap aman sesuai kode bawaanmu)
+  // LOGIKA PENYARINGAN DATA AKTIVITAS
   const filteredActivities = useMemo(() => {
     const todayObj = new Date();
     const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
 
-    return activities
+    const safeActivities = Array.isArray(activities) ? activities : [];
+
+    return safeActivities
       .filter(act => {
-        if (act.staff_name !== selectedStaff) return false;
+        if (!act || act.staff_name !== selectedStaff) return false;
         
         if (dateFilterType === "Hari Ini") {
           return act.activity_date === todayStr;
@@ -40,14 +41,14 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
       })
       .sort((a, b) => {
         if (a.activity_date === b.activity_date) {
-          return a.start_time > b.start_time ? 1 : -1;
+          return (a.start_time || "") > (b.start_time || "") ? 1 : -1;
         }
-        return a.activity_date > b.activity_date ? 1 : -1;
+        return (a.activity_date || "") > (b.activity_date || "") ? 1 : -1;
       });
   }, [activities, selectedStaff, dateFilterType, customStartDate]);
 
   const formatTime = (timeStr) => {
-    if (!timeStr) return "";
+    if (!timeStr || !timeStr.includes(":")) return timeStr || "";
     const parts = timeStr.split(":");
     return `${parts[0]}.${parts[1]}`;
   };
@@ -67,7 +68,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
     }
   };
 
-  // FUNGSI BARU: Menghapus Tugas Manual dari Database
   const handleDeleteActivity = async (id) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus tugas manual ini?")) {
       const { error } = await supabase
@@ -85,7 +85,6 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
     }
   };
 
-  // FUNGSI BARU: Menyimpan Update Data dari Modal Edit
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     const { error } = await supabase
@@ -110,12 +109,10 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
     }
   };
 
-  // FUNGSI CHAT AI: Dimodifikasi agar menyertakan konteks Assignee target
   const handleSendAiMessage = async () => {
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
 
-    // Tentukan target eksekusi tugas akhir
     let finalAssignee = selectedStaff;
     if (assignType === "other") {
       if (!targetStaffName.trim()) {
@@ -161,14 +158,14 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
         const todoItems = JSON.parse(jsonString);
 
         const insertData = todoItems.map(item => ({
-          staff_name: finalAssignee, // Di-assign ke orang lain secara dinamis
+          staff_name: finalAssignee, 
           title: item.title || "Tanpa Judul",
           activity_date: targetDate,
           start_time: item.start_time || "08:00",
           end_time: item.end_time || "09:00",
           is_completed: item.is_completed ?? false,
           source: "manual",
-          description: item.description || `Dibuat otomatis oleh Asisten Gemini AI (Ditugaskan oleh ${selectedStaff}).`
+          description: item.description || `Dibuat otomatis oleh Asisten Gemini AI.`
         }));
 
         const { error } = await supabase.from("activities").insert(insertData);
@@ -191,8 +188,14 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
       <style>{`
         .filter-btn { padding: 6px 14px; border-radius: 8px; border: 1px solid #d2d2d7; background: #fff; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s ease; }
         .filter-btn.active { background: #0071e3; color: #fff; border-color: #0071e3; }
-        .action-btn { background: none; border: none; cursor: pointer; padding: 4px 6px; border-radius: 6px; font-size: 14px; transition: background 0.2s; }
-        .action-btn:hover { background: #f5f5f7; }
+        
+        /* Gaya baru untuk tombol tulisan Edit & Hapus */
+        .text-action-btn { background: none; border: none; cursor: pointer; font-size: 12px; font-weight: 500; padding: 4px 8px; border-radius: 6px; transition: all 0.2s ease; }
+        .text-action-btn.edit { color: #0071e3; }
+        .text-action-btn.edit:hover { background: #f2f7ff; }
+        .text-action-btn.delete { color: #ff3b30; }
+        .text-action-btn.delete:hover { background: #fff2f2; }
+
         .edit-input { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d2d2d7; margin-bottom: 12px; font-size: 13px; box-sizing: border-box; }
       `}</style>
 
@@ -204,12 +207,24 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
             Menampilkan list tugas personal pada bulan <strong>{monthNames[currentMonth - 1]} {currentYear}</strong>.
           </p>
         </div>
-        <button onClick={onOpenAddModal} style={{ padding: "10px 20px", backgroundColor: "var(--apple-blue, #0071e3)", color: "#fff", border: "none", borderRadius: "20px", fontWeight: 600, fontSize: "14px", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,113,227,0.2)", display: "flex", alignItems: "center", gap: "6px" }}>
+        
+        {/* Tombol Tambah Tugas Baru Bawaan */}
+        <button 
+          onClick={() => {
+            if (typeof onOpenAddModal === 'function') {
+              onOpenAddModal();
+            } else {
+              console.error("Props onOpenAddModal tidak terdefinisi atau bukan fungsi!");
+              alert("Gagal membuka form: Fungsi penambah belum terhubung dari Parent Component.");
+            }
+          }} 
+          style={{ padding: "10px 20px", backgroundColor: "var(--apple-blue, #0071e3)", color: "#fff", border: "none", borderRadius: "20px", fontWeight: 600, fontSize: "14px", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,113,227,0.2)", display: "flex", alignItems: "center", gap: "6px" }}
+        >
           <span style={{ fontSize: "18px", fontWeight: "bold" }}>+</span> Tambah Tugas Baru
         </button>
       </header>
 
-      {/* TOOLBAR FILTER WAKTU (Sesuai kode awal Anda) */}
+      {/* TOOLBAR FILTER WAKTU */}
       <div className="glass-panel" style={{ padding: "12px 20px", backgroundColor: "#fff", borderRadius: "12px", marginBottom: "25px", display: "flex", alignItems: "center", gap: "15px", flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,0.02)" }}>
         <div style={{ display: "flex", gap: "6px" }}>
           <button onClick={() => setDateFilterType("Semua")} className={`filter-btn ${dateFilterType === "Semua" ? "active" : ""}`}>Semua Hari</button>
@@ -224,47 +239,31 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
 
       <div style={{ display: "flex", gap: "30px", alignItems: "flex-start", flexWrap: "wrap" }}>
         
-        {/* KOLOM KIRI: PANEL INTERAKSI AI DENGAN DROPDOWN ASSIGN */}
+        {/* PANEL GEMINI */}
         <div className="glass-panel" style={{ flex: "1 1 350px", backgroundColor: "#fff", borderRadius: "14px", padding: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
           <h3 style={{ margin: "0 0 5px 0", fontSize: "18px", fontWeight: 700 }}>🪄 Gemini To-Do Asisten</h3>
           <p style={{ fontSize: "12px", color: "var(--apple-text-sub)", margin: "0 0 15px 0" }}>Ketik instruksi kegiatan, konfirmasi drafnya, lalu ketik "Setuju" untuk menyimpan.</p>
           
-          {/* SELEKTOR ASSIGN BARU */}
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
             <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-main)" }}>Penugasan Tugas (*Assign To):</label>
-            <select 
-              value={assignType} 
-              onChange={e => { setAssignType(e.target.value); setTargetStaffName(""); }}
-              style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", backgroundColor: "#fff" }}
-            >
+            <select value={assignType} onChange={e => { setAssignType(e.target.value); setTargetStaffName(""); }} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", backgroundColor: "#fff" }}>
               <option value="self">Diri Sendiri ({selectedStaff})</option>
               <option value="other">Assign ke Orang Lain</option>
             </select>
           </div>
 
-          {/* Dinamis Input/Dropdown jika memilih Orang Lain */}
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
               <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Pilih Nama / Masukkan Email:</label>
               {staffList.length > 0 ? (
-                <select
-                  value={targetStaffName}
-                  onChange={e => setTargetStaffName(e.target.value)}
-                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", backgroundColor: "#fff" }}
-                >
+                <select value={targetStaffName} onChange={e => setTargetStaffName(e.target.value)} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", backgroundColor: "#fff" }}>
                   <option value="">-- Pilih Anggota Staff --</option>
                   {staffList.filter(s => s !== selectedStaff).map(st => (
                     <option key={st} value={st}>{st}</option>
                   ))}
                 </select>
               ) : (
-                <input 
-                  type="text" 
-                  placeholder="Ketik nama lengkap atau email tujuan..." 
-                  value={targetStaffName}
-                  onChange={e => setTargetStaffName(e.target.value)}
-                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px" }}
-                />
+                <input type="text" placeholder="Ketik nama lengkap atau email tujuan..." value={targetStaffName} onChange={e => setTargetStaffName(e.target.value)} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px" }} />
               )}
             </div>
           )}
@@ -292,7 +291,7 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
           </div>
         </div>
 
-        {/* KOLOM KANAN: CARD LIST AKTIVITAS USER DENGAN TOMBOL EDIT/DELETE */}
+        {/* LIST CARD TUGAS */}
         <div style={{ flex: "2 1 500px" }}>
           {filteredActivities.length === 0 ? (
             <div className="glass-panel" style={{ padding: "40px", textAlign: "center", color: "var(--apple-text-sub)", backgroundColor: "#fff", borderRadius: "14px" }}>Tidak ada data aktivitas yang sesuai dengan filter filter tanggal ini.</div>
@@ -302,20 +301,20 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
                 <div key={act.id} className="glass-panel" style={{ padding: "20px", position: "relative", backgroundColor: "#fff", borderRadius: "14px", boxShadow: "0 4px 12px rgba(0,0,0,0.01)", border: act.is_completed ? "1px solid #d2d2d7" : "1px solid transparent", opacity: act.is_completed ? 0.65 : 1, transition: "all 0.2s ease" }}>
                   
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                    <div onClick={() => handleToggleCardComplete(act.id, act.is_completed)} style={{ fontSize: "12px", color: act.is_completed ? "#86868b" : "var(--apple-green)", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }} title="Klik untuk mengubah status selesai">
+                    <div onClick={() => handleToggleCardComplete(act.id, act.is_completed)} style={{ fontSize: "12px", color: act.is_completed ? "#86868b" : "var(--apple-green)", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }} title="Klik untuk merubah status">
                       {act.is_completed ? "✅" : "🕒"} {formatTime(act.start_time)} - {formatTime(act.end_time)}
                     </div>
 
-                    {/* RENDERING DUA TOMBOL AKSI JIKA SUMBER ADALAH MANUAL */}
+                    {/* PERUBAHAN: Menggunakan teks tulisan biasa "Edit" & "Hapus" */}
                     {act.source === "manual" && (
-                      <div style={{ display: "flex", gap: "2px" }}>
-                        <button className="action-btn" onClick={() => { setEditingActivity({ ...act }); setIsEditModalOpen(true); }} title="Edit Tugas">✏️</button>
-                        <button className="action-btn" onClick={() => handleDeleteActivity(act.id)} title="Hapus Tugas">🗑️</button>
+                      <div style={{ display: "flex", gap: "4px" }}>
+                        <button className="text-action-btn edit" onClick={() => { setEditingActivity({ ...act }); setIsEditModalOpen(true); }}>Edit</button>
+                        <button className="text-action-btn delete" onClick={() => handleDeleteActivity(act.id)}>Hapus</button>
                       </div>
                     )}
                   </div>
 
-                  <h3 style={{ margin: "0 0 10px 0", fontSize: "17px", fontWeight: 600, paddingRight: "40px", textDecoration: act.is_completed ? "line-through" : "none", color: act.is_completed ? "#86868b" : "var(--apple-text-main)" }}>{act.title}</h3>
+                  <h3 style={{ margin: "0 0 10px 0", fontSize: "17px", fontWeight: 600, textDecoration: act.is_completed ? "line-through" : "none", color: act.is_completed ? "#86868b" : "var(--apple-text-main)" }}>{act.title}</h3>
                   <p style={{ color: act.is_completed ? "#86868b" : "#424245", fontSize: "13px", lineHeight: "1.4", marginBottom: "20px", textDecoration: act.is_completed ? "line-through" : "none" }}>{act.description || "Tidak ada deskripsi rinci."}</p>
 
                   <div style={{ borderTop: "1px solid #e5e5ea", paddingTop: "12px", display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--apple-text-sub)" }}>
@@ -330,7 +329,7 @@ export default function MyActivity({ activities, selectedStaff, currentMonth, cu
 
       </div>
 
-      {/* MODAL INTERAKTIF: EDIT DATA TUGAS */}
+      {/* MODAL EDIT DATA TUGAS */}
       {isEditModalOpen && editingActivity && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.3)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100 }}>
           <form onSubmit={handleSaveEdit} className="glass-panel" style={{ backgroundColor: "#fff", width: "100%", maxWidth: "420px", padding: "25px", borderRadius: "16px", boxShadow: "0 8px 30px rgba(0,0,0,0.15)" }}>
