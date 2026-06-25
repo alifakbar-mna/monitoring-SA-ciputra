@@ -13,6 +13,9 @@ export default function Navbar({
         <span onClick={() => setCurrentPage("all_activity")} style={{ cursor: "pointer", fontSize: "14px", color: currentPage === "all_activity" ? "var(--apple-blue)" : "var(--apple-text-sub)" }}>All Matrix</span>
         <span onClick={() => setCurrentPage("my_activity")} style={{ cursor: "pointer", fontSize: "14px", color: currentPage === "my_activity" ? "var(--apple-blue)" : "var(--apple-text-sub)" }}>My Board</span>
         
+        {/* 🌟 BARU: Menu Navigasi untuk menuju halaman Notes Calendar */}
+        <span onClick={() => setCurrentPage("notes")} style={{ cursor: "pointer", fontSize: "14px", color: currentPage === "notes" ? "var(--apple-blue)" : "var(--apple-text-sub)" }}>Notes</span>
+        
         {/* Render Link Admin khusus jika role bernilai 'admin' */}
         {currentUser?.role === "admin" && (
           <span onClick={() => setCurrentPage("admin_panel")} style={{ cursor: "pointer", fontSize: "14px", fontWeight: "bold", color: currentPage === "admin_panel" ? "var(--apple-blue)" : "var(--apple-red)" }}>

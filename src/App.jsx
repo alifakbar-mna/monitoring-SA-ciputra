@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import AllActivity from "./pages/AllActivity";
 import MyActivity from "./pages/MyActivity";
 import AdminPanel from "./pages/AdminPanel"; 
+import NotesCalendar from "./pages/NotesCalendar"; // 🌟 BARU: Import halaman catatan kalender
 import AddActivityModal from "./components/AddActivityModal";
 
 function App() {
@@ -68,7 +69,6 @@ function App() {
                 const end = event.end?.dateTime || event.end?.date;
                 if (!start) return null;
 
-                // FIXED: Menghapus properti campus agar tidak dikirim ke tabel activities
                 return {
                   staff_name: staff.name,
                   title: event.summary || "No Title",
@@ -296,6 +296,10 @@ function App() {
       case "all_activity": return <AllActivity activities={filteredActivities} staffList={staffList} onUpdateActivity={handleUpdateActivity} currentMonth={currentMonth} currentYear={currentYear} />;
       case "my_activity": return <MyActivity activities={filteredActivities} selectedStaff={currentUser.name} currentMonth={currentMonth} currentYear={currentYear} onOpenAddModal={() => setIsModalOpen(true)} />;
       case "admin_panel": return currentUser.role === 'admin' ? <AdminPanel /> : <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
+      
+      // 🌟 BARU: Menambahkan Router Case untuk Halaman Catatan (Notes)
+      case "notes": return <NotesCalendar />;
+      
       default: return <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
     }
   };
