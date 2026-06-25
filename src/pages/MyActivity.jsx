@@ -8,11 +8,11 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [targetDate, setTargetDate] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // State Fitur Assign To (Menyimpan Teks Email yang Diketik Manual)
+  // State Fitur Assign To (Menyimpan Teks Email dari Dropdown)
   const [assignType, setAssignType] = useState("self"); 
-  const [targetStaffEmail, setTargetStaffEmail] = useState(""); // Menyimpan email hasil ketikan user
+  const [targetStaffEmail, setTargetStaffEmail] = useState(""); // Menyimpan email hasil pilihan dropdown
 
-  // State Referensi Data Staff Langsung dari Tabel Database Staff
+  // State Referensi Daftar Staff untuk Dropdown (Diambil dari Tabel Database)
   const [dbStaffReferences, setDbStaffReferences] = useState([]);
 
   // State Manajemen Aksi Edit & Delete Modal
@@ -24,25 +24,20 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [customStartDate, setCustomStartDate] = useState("");
 
   /**
-   * 🔄 AMBIL DATA REFERENSI EMAIL DARI TABEL STAFF SUPABASE
-   * Mengambil data asli agar fitur pengetikan email untuk orang lain bisa divalidasi dengan akurat.
+   * 🔄 OTOMATIS AMBIL DAFTAR STAFF UNTUK DROPDOWN
+   * Mengambil data asli dari tabel 'staff' Supabase untuk dimasukkan ke dalam opsi pilihan.
    */
   useEffect(() => {
     const fetchRealStaffData = async () => {
-      // Tambahkan log untuk memastikan fungsi ini berjalan
-      console.log("Memulai fetching data dari tabel 'staff'...");
-      
       const { data, error } = await supabase
         .from("staff")
-        .select("name, email");
+        .select("name, email")
+        .order("name", { ascending: true }); // Diurutkan alfabetis A-Z
       
-      if (error) {
-        console.error("❌ ERROR SUPABASE:", error.message);
-      }
-
-      if (data) {
-        console.log("✅ DATA STAFF DARI DATABASE:", data);
+      if (!error && data) {
         setDbStaffReferences(data);
+      } else {
+        console.error("Gagal memuat daftar dropdown staff:", error);
       }
     };
     
@@ -51,7 +46,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
   /**
    * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri):
-   * Mengambil nama lengkap staff dari array objek `dbStaffReferences` berdasarkan email di `selectedStaff`.
+   * Mengambil nama lengkap staff dari database berdasarkan email di `selectedStaff`.
    */
   const currentStaffName = useMemo(() => {
     if (!selectedStaff) return "";
@@ -69,24 +64,18 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   }, [selectedStaff, dbStaffReferences]);
 
   /**
-   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain) - SOLUSI FIX AKURAT:
-   * Mencari nama lengkap staff tujuan berdasarkan teks `targetStaffEmail` yang diketik manual.
-   * COCOK LANGSUNG DENGAN DATA REAL TABEL STAFF SUPABASE.
+   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain):
+   * Mencari nama lengkap staff tujuan berdasarkan email yang dipilih di dropdown select.
    */
   const targetStaffName = useMemo(() => {
-    const cleanedEmail = targetStaffEmail.trim().toLowerCase();
-    if (!cleanedEmail) return null;
+    if (!targetStaffEmail) return null;
 
-    // Mencari dengan proteksi ekstra .trim() pada data dari database
+    const cleanedEmail = targetStaffEmail.trim().toLowerCase();
     const foundStaff = dbStaffReferences.find(
-      (s) => s && s.email && s.email.trim().toLowerCase() === cleanedEmail
+      (s) => s && s.email?.toLowerCase() === cleanedEmail
     );
 
-    if (foundStaff && foundStaff.name) {
-      return foundStaff.name;
-    }
-
-    return null;
+    return foundStaff ? foundStaff.name : null;
   }, [targetStaffEmail, dbStaffReferences]);
 
 
@@ -184,112 +173,93 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     }
   };
 
-  // LOGIKA KIRIM TUGAS DENGAN VALIDASI DATABASE KETAT
+  // LOGIKA KIRIM TUGAS DENGAN VALIDASI DROPDOWN AMAN
   const handleSendAiMessage = async () => {
-  if (!inputMessage.trim()) return;
-  if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
+    if (!inputMessage.trim()) return;
+    if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
 
-  let finalAssignee = currentStaffName;
-  
-  if (assignType === "other") {
-    const cleanedEmail = targetStaffEmail.trim().toLowerCase();
-    if (!cleanedEmail) {
-      return alert("Silakan isi alamat email staff tujuan terlebih dahulu!");
+    let finalAssignee = currentStaffName;
+    
+    if (assignType === "other") {
+      if (!targetStaffEmail) {
+        return alert("Silakan pilih staff tujuan dari dropdown terlebih dahulu!");
+      }
+
+      if (!targetStaffName) {
+        return alert("Data nama staff tujuan tidak ditemukan. Silakan pilih ulang.");
+      }
+
+      finalAssignee = targetStaffName;
     }
 
+    const updatedHistory = [
+      ...chatHistory,
+      {
+        role: "user",
+        parts: [{ text: `[Assignee Target: ${finalAssignee}] ${inputMessage.trim()}` }]
+      }
+    ];
+
+    setChatHistory(updatedHistory);
+    const userMessageCopy = inputMessage.trim();
+    setInputMessage("");
     setIsAiLoading(true);
 
-    // 🔥 FIX DIRECT QUERY: Cek keberadaan email langsung ke database saat tombol diklik
-    const { data: verifiedStaff, error: checkError } = await supabase
-      .from("staff")
-      .select("name")
-      .eq("email", cleanedEmail)
-      .maybeSingle();
-
-    if (checkError) {
-      setIsAiLoading(false);
-      return alert("Terjadi masalah koneksi database: " + checkError.message);
-    }
-
-    // Jika record database tidak mengembalikan baris apa pun
-    if (!verifiedStaff) {
-      setIsAiLoading(false);
-      return alert("❌ Email tidak ditemukan! Alamat email tersebut tidak terdaftar di database staff kami. Silakan periksa kembali.");
-    }
-
-    // Gunakan nama resmi dari database (Misal: "Kak Birgita")
-    finalAssignee = verifiedStaff.name;
-  }
-
-  // --- Mulai Alur Pengiriman ke Gemini AI ---
-  const updatedHistory = [
-    ...chatHistory,
-    {
-      role: "user",
-      parts: [{ text: `[Assignee Target: ${finalAssignee}] ${inputMessage.trim()}` }]
-    }
-  ];
-
-  setChatHistory(updatedHistory);
-  const userMessageCopy = inputMessage.trim();
-  setInputMessage("");
-  setIsAiLoading(true);
-
-  try {
-    const res = await fetch("/api/generate-todo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: `Buatkan to-do list untuk staff bernama: ${finalAssignee}. Detail instruksi: ${userMessageCopy}`,
-        chatHistory: updatedHistory
-      })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Gagal memanggil API Gemini");
-
-    const aiText = data?.text || "";
-    setChatHistory(prev => [...prev, { role: "model", parts: [{ text: aiText }] }]);
-
-    if (aiText.includes("<DATA>")) {
-      const match = aiText.match(/<DATA>([\s\S]*?)<\/DATA>/);
-      if (!match?.[1]) throw new Error("Format DATA dari Gemini tidak valid");
-
-      const jsonString = match[1].trim();
-      const todoItems = JSON.parse(jsonString);
-
-      const insertData = todoItems.map(item => {
-        let baseDesc = item.description || "Dibuat otomatis oleh Asisten Gemini AI.";
-        if (finalAssignee !== currentStaffName) {
-          baseDesc = `${baseDesc} (Ditugaskan oleh ${currentStaffName})`;
-        }
-
-        return {
-          staff_name: finalAssignee,
-          title: item.title || "Tanpa Judul",
-          activity_date: targetDate,
-          start_time: item.start_time || "08:00",
-          end_time: item.end_time || "09:00",
-          is_completed: item.is_completed ?? false,
-          source: "manual",
-          description: baseDesc
-        };
+    try {
+      const res = await fetch("/api/generate-todo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `Buatkan to-do list untuk staff bernama: ${finalAssignee}. Detail instruksi: ${userMessageCopy}`,
+          chatHistory: updatedHistory
+        })
       });
 
-      const { error } = await supabase.from("activities").insert(insertData);
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal memanggil API Gemini");
 
-      alert(`🎉 Sukses! ${todoItems.length} To-Do List berhasil disimpan untuk ${finalAssignee}.`);
-      setChatHistory([]);
-      if (onUpdateActivity) onUpdateActivity();
+      const aiText = data?.text || "";
+      setChatHistory(prev => [...prev, { role: "model", parts: [{ text: aiText }] }]);
+
+      if (aiText.includes("<DATA>")) {
+        const match = aiText.match(/<DATA>([\s\S]*?)<\/DATA>/);
+        if (!match?.[1]) throw new Error("Format DATA dari Gemini tidak valid");
+
+        const jsonString = match[1].trim();
+        const todoItems = JSON.parse(jsonString);
+
+        const insertData = todoItems.map(item => {
+          let baseDesc = item.description || "Dibuat otomatis oleh Asisten Gemini AI.";
+          if (finalAssignee !== currentStaffName) {
+            baseDesc = `${baseDesc} (Ditugaskan oleh ${currentStaffName})`;
+          }
+
+          return {
+            staff_name: finalAssignee, 
+            title: item.title || "Tanpa Judul",
+            activity_date: targetDate,
+            start_time: item.start_time || "08:00",
+            end_time: item.end_time || "09:00",
+            is_completed: item.is_completed ?? false,
+            source: "manual",
+            description: baseDesc
+          };
+        });
+
+        const { error } = await supabase.from("activities").insert(insertData);
+        if (error) throw error;
+
+        alert(`🎉 Sukses! ${todoItems.length} To-Do List berhasil disimpan untuk ${finalAssignee}.`);
+        setChatHistory([]);
+        if (onUpdateActivity) onUpdateActivity();
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Terjadi kesalahan");
+    } finally {
+      setIsAiLoading(false);
     }
-  } catch (err) {
-    console.error(err);
-    alert(err.message || "Terjadi kesalahan");
-  } finally {
-    setIsAiLoading(false);
-  }
-};
+  };
 
   return (
     <div style={{ padding: "20px 40px" }}>
@@ -304,6 +274,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         .text-action-btn.delete:hover { background: #fff2f2; }
 
         .edit-input { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d2d2d7; margin-bottom: 12px; font-size: 13px; box-sizing: border-box; }
+        .select-input-apple { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #d2d2d7; font-size: 13px; background-color: #fff; outline: none; cursor: pointer; }
       `}</style>
 
       {/* HEADER UTAMA */}
@@ -320,11 +291,11 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
             if (typeof onOpenAddModal === 'function') {
               onOpenAddModal();
             } else {
-              console.error("Props onOpenAddModal tidak terdefinisi atau bukan fungsi!");
-              alert("Gagal membuka form: Fungsi penambah belum terhubung dari Parent Component.");
+              console.error("Props onOpenAddModal tidak terdefinisi!");
+              alert("Gagal membuka form penambah.");
             }
           }} 
-          style={{ padding: "10px 20px", backgroundColor: "var(--apple-blue, #0071e3)", color: "#fff", border: "none", borderRadius: "20px", fontWeight: 600, fontSize: "14px", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,113,227,0.2)", display: "flex", alignItems: "center", gap: "6px" }}
+          style={{ padding: "10px 20px", backgroundColor: "#0071e3", color: "#fff", border: "none", borderRadius: "20px", fontWeight: 600, fontSize: "14px", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,113,227,0.2)", display: "flex", alignItems: "center", gap: "6px" }}
         >
           <span style={{ fontSize: "18px", fontWeight: "bold" }}>+</span> Tambah Tugas Baru
         </button>
@@ -352,35 +323,34 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
           
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
             <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-main)" }}>Penugasan Tugas (*Assign To):</label>
-            <select value={assignType} onChange={e => { setAssignType(e.target.value); setTargetStaffEmail(""); }} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", backgroundColor: "#fff" }}>
+            <select value={assignType} onChange={e => { setAssignType(e.target.value); setTargetStaffEmail(""); }} className="select-input-apple">
               <option value="self">Diri Sendiri ({currentStaffName})</option>
               <option value="other">Assign ke Orang Lain</option>
             </select>
           </div>
 
-          {/* INPUT EMAIL DENGAN FEEDBACK VISUAL REAL-TIME */}
+          {/* DROPDOWN SELECT UTAMA - PENGGANTI INPUT TEKS MANUAL */}
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
-              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Email Staff Tujuan:</label>
-              <input 
-                type="email" 
-                placeholder="Silahkan tulis email yg ingin dituju..." 
+              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Pilih Staff Tujuan:</label>
+              <select 
                 value={targetStaffEmail} 
                 onChange={e => setTargetStaffEmail(e.target.value)} 
-                style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", outline: "none" }} 
-              />
+                className="select-input-apple"
+              >
+                <option value="">-- Silakan Pilih Nama Staff --</option>
+                {dbStaffReferences.map((staff, index) => (
+                  <option key={index} value={staff.email}>
+                    {staff.name} ({staff.email})
+                  </option>
+                ))}
+              </select>
               
-              {/* Logika Deteksi Feedback Visual Langsung dari Database */}
-              {targetStaffEmail.trim() && (
-                targetStaffName ? (
-                  <span style={{ fontSize: "11px", color: "#34c759", fontWeight: "500" }}>
-                    ✅ Terdeteksi sebagai: <strong>{targetStaffName}</strong>
-                  </span>
-                ) : (
-                  <span style={{ fontSize: "11px", color: "#ff3b30", fontWeight: "500" }}>
-                    ❌ Email tidak terdaftar di database staff!
-                  </span>
-                )
+              {/* Feedback Visual Sukses */}
+              {targetStaffEmail && targetStaffName && (
+                <span style={{ fontSize: "11px", color: "#34c759", fontWeight: "500", marginTop: "2px" }}>
+                  ✅ Terpilih untuk didelegasikan ke: <strong>{targetStaffName}</strong>
+                </span>
               )}
             </div>
           )}
