@@ -22,7 +22,7 @@ export default function AddActivityModal({ isOpen, onClose, selectedStaff, onSav
       activity_date: date,
       start_time: startTime,
       end_time: endTime,
-      status: "not_started"
+      is_completed: false
     });
 
     // Reset Form
