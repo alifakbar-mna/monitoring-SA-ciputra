@@ -22,28 +22,23 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
   /**
    * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF:
-   * Mencari tahu nama lengkap staff asli berdasarkan email yang sedang aktif di `selectedStaff`.
-   * Jika staffList berbentuk array of object [{ name: "...", email: "..." }], kita cari yang cocok.
-   * Jika tidak ditemukan atau staffList hanya array string biasa, kita gunakan fallback `selectedStaff` itu sendiri.
+   * Mengambil nama lengkap staff dari array objek `staffList` berdasarkan email di `selectedStaff`.
+   * Jika tidak ditemukan, email sebelum tanda '@' akan diambil sebagai fallback nama sementara.
    */
   const currentStaffName = useMemo(() => {
     if (!selectedStaff) return "";
     
-    // Jika selectedStaff sudah berupa Email (mengandung '@')
-    if (selectedStaff.includes("@")) {
-      const foundStaff = staffList.find(
-        (s) => s && typeof s === "object" && s.email === selectedStaff
-      );
-      if (foundStaff && foundStaff.name) {
-        return foundStaff.name;
-      }
-      
-      // Kasus Fallback: jika tidak ada object, potong string sebelum '@' sebagai nama sementara
-      return selectedStaff.split("@")[0];
+    // Mencari objek staff yang memiliki email yang sama dengan selectedStaff
+    const foundStaff = staffList.find(
+      (s) => s && typeof s === "object" && s.email === selectedStaff
+    );
+
+    if (foundStaff && foundStaff.name) {
+      return foundStaff.name;
     }
     
-    // Jika yang dioper dari awal memang sudah nama lengkap
-    return selectedStaff;
+    // Jika data tidak ditemukan di staffList atau formatnya salah, bersihkan teks email sebagai cadangan nama
+    return selectedStaff.includes("@") ? selectedStaff.split("@")[0] : selectedStaff;
   }, [selectedStaff, staffList]);
 
 
@@ -56,7 +51,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
     return safeActivities
       .filter(act => {
-        // COCOKKAN MENGGUNAKAN HASIL RESOLUSI NAMA (currentStaffName)
+        // Melakukan filter aktivitas berdasarkan Nama Lengkap hasil pencarian email tadi
         const isAssignedToMe = act.staff_name === currentStaffName;
         const isAssignedByMe = act.description && act.description.includes(`Ditugaskan oleh ${currentStaffName}`);
 
@@ -146,7 +141,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
 
-    // Set target assignee dasar (Nama lengkap, bukan email)
+    // Mengambil Nama Lengkap staff pengirim/pemberi tugas dari email
     let finalAssignee = currentStaffName;
     
     if (assignType === "other") {
@@ -220,7 +215,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     } catch (err) {
       console.error(err);
       alert(err.message || "Terjadi kesalahan");
-    } finally {
+    } finale {
       setIsAiLoading(false);
     }
   };
