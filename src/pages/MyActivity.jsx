@@ -8,9 +8,9 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [targetDate, setTargetDate] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // State Fitur Assign To (Menyimpan Teks Email dari Dropdown)
+  // State Fitur Assign To (Menyimpan Nama Staff yang Dipilih dari Dropdown)
   const [assignType, setAssignType] = useState("self"); 
-  const [targetStaffEmail, setTargetStaffEmail] = useState(""); // Menyimpan email hasil pilihan dropdown
+  const [targetStaffNameState, setTargetStaffNameState] = useState(""); // Menyimpan nama hasil pilihan dropdown
 
   // State Referensi Daftar Staff untuk Dropdown (Diambil dari Tabel Database)
   const [dbStaffReferences, setDbStaffReferences] = useState([]);
@@ -24,8 +24,8 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [customStartDate, setCustomStartDate] = useState("");
 
   /**
-   * 🔄 OTOMATIS AMBIL DAFTAR STAFF UNTUK DROPDOWN
-   * Mengambil data asli dari tabel 'staff' Supabase untuk dimasukkan ke dalam opsi pilihan.
+   * 🔄 OTOMATIS AMBIL DAFTAR STAFF DARI DATABASE
+   * Mengambil data asli dari tabel 'staff' Supabase untuk dimasukkan ke dalam opsi dropdown nama.
    */
   useEffect(() => {
     const fetchRealStaffData = async () => {
@@ -46,7 +46,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
   /**
    * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri):
-   * Mengambil nama lengkap staff dari database berdasarkan email di `selectedStaff`.
+   * Mengambil nama lengkap staff dari database berdasarkan email login di `selectedStaff`.
    */
   const currentStaffName = useMemo(() => {
     if (!selectedStaff) return "";
@@ -62,21 +62,6 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     
     return selectedStaff.includes("@") ? selectedStaff.split("@")[0] : selectedStaff;
   }, [selectedStaff, dbStaffReferences]);
-
-  /**
-   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain):
-   * Mencari nama lengkap staff tujuan berdasarkan email yang dipilih di dropdown select.
-   */
-  const targetStaffName = useMemo(() => {
-    if (!targetStaffEmail) return null;
-
-    const cleanedEmail = targetStaffEmail.trim().toLowerCase();
-    const foundStaff = dbStaffReferences.find(
-      (s) => s && s.email?.toLowerCase() === cleanedEmail
-    );
-
-    return foundStaff ? foundStaff.name : null;
-  }, [targetStaffEmail, dbStaffReferences]);
 
 
   // LOGIKA PENYARINGAN DATA AKTIVITAS
@@ -173,7 +158,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     }
   };
 
-  // LOGIKA KIRIM TUGAS DENGAN VALIDASI DROPDOWN AMAN
+  // LOGIKA KIRIM TUGAS DENGAN VALIDASI SELEKSI NAMA DROPDOWN
   const handleSendAiMessage = async () => {
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
@@ -181,15 +166,10 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     let finalAssignee = currentStaffName;
     
     if (assignType === "other") {
-      if (!targetStaffEmail) {
+      if (!targetStaffNameState) {
         return alert("Silakan pilih staff tujuan dari dropdown terlebih dahulu!");
       }
-
-      if (!targetStaffName) {
-        return alert("Data nama staff tujuan tidak ditemukan. Silakan pilih ulang.");
-      }
-
-      finalAssignee = targetStaffName;
+      finalAssignee = targetStaffNameState;
     }
 
     const updatedHistory = [
@@ -319,37 +299,36 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         {/* PANEL GEMINI ASISTEN */}
         <div className="glass-panel" style={{ flex: "1 1 350px", backgroundColor: "#fff", borderRadius: "14px", padding: "20px", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
           <h3 style={{ margin: "0 0 5px 0", fontSize: "18px", fontWeight: 700 }}>🪄 Gemini To-Do Asisten</h3>
-          <p style={{ fontSize: "12px", color: "var(--apple-text-sub)", margin: "0 0 15px 0" }}>Ketik instruksi kegiatan, konfirmasi drafnya, lalu ketik "Setuju" untuk menyimpan.</p>
+          <p style={{ fontSize: "12px", color: "var(--apple-text-sub)", margin: "0 0 15px 0" }}>Pilih penugasan, tentukan tanggal, lalu ketik instruksi kegiatan di bawah.</p>
           
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
             <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-main)" }}>Penugasan Tugas (*Assign To):</label>
-            <select value={assignType} onChange={e => { setAssignType(e.target.value); setTargetStaffEmail(""); }} className="select-input-apple">
+            <select value={assignType} onChange={e => { setAssignType(e.target.value); setTargetStaffNameState(""); }} className="select-input-apple">
               <option value="self">Diri Sendiri ({currentStaffName})</option>
               <option value="other">Assign ke Orang Lain</option>
             </select>
           </div>
 
-          {/* DROPDOWN SELECT UTAMA - PENGGANTI INPUT TEKS MANUAL */}
+          {/* DROPDOWN SELECT UTAMA - MENAMPILKAN DAN MENYIMPAN NAMA STAFF */}
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
-              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Pilih Staff Tujuan:</label>
+              <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--apple-text-main)" }}>Pilih Staff Tujuan:</label>
               <select 
-                value={targetStaffEmail} 
-                onChange={e => setTargetStaffEmail(e.target.value)} 
+                value={targetStaffNameState} 
+                onChange={e => setTargetStaffNameState(e.target.value)} 
                 className="select-input-apple"
               >
-                <option value="">-- Silakan Pilih Nama Staff --</option>
+                <option value="">-- Pilih Nama Staff --</option>
                 {dbStaffReferences.map((staff, index) => (
-                  <option key={index} value={staff.email}>
-                    {staff.name} ({staff.email})
+                  <option key={index} value={staff.name}>
+                    {staff.name}
                   </option>
                 ))}
               </select>
               
-              {/* Feedback Visual Sukses */}
-              {targetStaffEmail && targetStaffName && (
+              {targetStaffNameState && (
                 <span style={{ fontSize: "11px", color: "#34c759", fontWeight: "500", marginTop: "2px" }}>
-                  ✅ Terpilih untuk didelegasikan ke: <strong>{targetStaffName}</strong>
+                  ✅ Siap didelegasikan kepada: <strong>{targetStaffNameState}</strong>
                 </span>
               )}
             </div>
