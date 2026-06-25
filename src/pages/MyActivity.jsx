@@ -1,16 +1,19 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react"; // Tambahkan useEffect
 import { supabase } from "../supabase";
 
-export default function MyActivity({ activities = [], selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity, staffList = [] }) {
+export default function MyActivity({ activities = [], selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity }) {
   // State untuk Asisten AI Gemini
   const [inputMessage, setInputMessage] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
   const [targetDate, setTargetDate] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // State Fitur Assign To (Menyimpan Teks Email yang Diketik Manual)
+  // State Fitur Assign To (Menyimpan Nama Staff & Email Hasil Pilihan Dropdown)
   const [assignType, setAssignType] = useState("self"); 
   const [targetStaffEmail, setTargetStaffEmail] = useState(""); 
+  
+  // 🌟 BARU: State untuk menampung daftar staff dari database
+  const [dbStaffList, setDbStaffList] = useState([]);
 
   // State Manajemen Aksi Edit & Delete Modal
   const [editingActivity, setEditingActivity] = useState(null); 
@@ -21,13 +24,33 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [customStartDate, setCustomStartDate] = useState("");
 
   /**
+   * 🌟 BARU: Mengambil seluruh data staff dari table 'staff' di Supabase
+   */
+  useEffect(() => {
+    const fetchStaffList = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("staff")
+          .select("name, email"); // Mengambil kolom name dan email
+        
+        if (error) throw error;
+        if (data) setDbStaffList(data);
+      } catch (err) {
+        console.error("Gagal mengambil data staff:", err.message);
+      }
+    };
+
+    fetchStaffList();
+  }, []);
+
+  /**
    * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri):
-   * Mengambil nama lengkap staff dari array objek `staffList` berdasarkan email di `selectedStaff`.
+   * Mengambil nama lengkap staff dari array objek `dbStaffList` berdasarkan email di `selectedStaff`.
    */
   const currentStaffName = useMemo(() => {
     if (!selectedStaff) return "";
     
-    const safeStaffList = Array.isArray(staffList) ? staffList : [];
+    const safeStaffList = Array.isArray(dbStaffList) ? dbStaffList : [];
     const foundStaff = safeStaffList.find(
       (s) => s && typeof s === "object" && s.email === selectedStaff
     );
@@ -37,36 +60,29 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     }
     
     return selectedStaff.includes("@") ? selectedStaff.split("@")[0] : selectedStaff;
-  }, [selectedStaff, staffList]);
+  }, [selectedStaff, dbStaffList]);
 
   /**
    * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain):
-   * Mencari nama lengkap staff tujuan berdasarkan teks `targetStaffEmail` yang diketik manual.
+   * Mencari nama lengkap staff tujuan berdasarkan teks `targetStaffEmail` dari dropdown.
    */
   const targetStaffName = useMemo(() => {
     const cleanedEmail = targetStaffEmail.trim().toLowerCase();
     if (!cleanedEmail) return null;
 
-    const safeStaffList = Array.isArray(staffList) ? staffList : [];
+    const safeStaffList = Array.isArray(dbStaffList) ? dbStaffList : [];
 
-    // Pencarian dengan toleransi struktur data staffList
     const foundStaff = safeStaffList.find((s) => {
       if (!s) return false;
-      if (typeof s === "object") {
-        return s.email?.toLowerCase() === cleanedEmail;
-      }
-      if (typeof s === "string") {
-        return s.toLowerCase() === cleanedEmail;
-      }
-      return false;
+      return s.email?.toLowerCase() === cleanedEmail;
     });
 
-    if (foundStaff && typeof foundStaff === "object" && foundStaff.name) {
+    if (foundStaff && foundStaff.name) {
       return foundStaff.name;
     }
 
     return null;
-  }, [targetStaffEmail, staffList]);
+  }, [targetStaffEmail, dbStaffList]);
 
 
   // LOGIKA PENYARINGAN DATA AKTIVITAS
@@ -163,7 +179,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     }
   };
 
-  // LOGIKA KIRIM TUGAS (SUDAH FIX SYNTAX ERROR)
+  // LOGIKA KIRIM TUGAS
   const handleSendAiMessage = async () => {
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
@@ -173,11 +189,11 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     if (assignType === "other") {
       const cleanedEmail = targetStaffEmail.trim().toLowerCase();
       if (!cleanedEmail) {
-        return alert("Silakan isi alamat email staff tujuan terlebih dahulu!");
+        return alert("Silakan pilih staff tujuan terlebih dahulu!");
       }
 
       if (!targetStaffName) {
-        return alert("❌ Email tidak ditemukan! Alamat email tersebut tidak terdaftar di database staff kami. Silakan periksa kembali.");
+        return alert("❌ Staff tidak ditemukan! Silakan periksa kembali pilihan Anda.");
       }
 
       finalAssignee = targetStaffName;
@@ -248,7 +264,6 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
       console.error(err);
       alert(err.message || "Terjadi kesalahan");
     } finally {
-      // PERBAIKAN DI SINI: Menggunakan keyword "finally", bukan "finale"
       setIsAiLoading(false);
     }
   };
@@ -266,6 +281,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         .text-action-btn.delete:hover { background: #fff2f2; }
 
         .edit-input { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d2d2d7; margin-bottom: 12px; font-size: 13px; box-sizing: border-box; }
+        .select-input { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #d2d2d7; font-size: 13px; background-color: #fff; outline: none; }
       `}</style>
 
       {/* HEADER UTAMA */}
@@ -320,28 +336,30 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
             </select>
           </div>
 
-          {/* INPUT EMAIL DENGAN RE-VERIFIKASI AMAN */}
+          {/* 🌟 PERBAIKAN: SEKARANG MENGGUNAKAN DROPDOWN <select> DINAMIS DARI DATABASE */}
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
-              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Email Staff Tujuan:</label>
-              <input 
-                type="email" 
-                placeholder="Silahkan tulis email yg ingin dituju..." 
+              <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Pilih Staff Tujuan:</label>
+              <select 
+                className="select-input"
                 value={targetStaffEmail} 
-                onChange={e => setTargetStaffEmail(e.target.value)} 
-                style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #d2d2d7", fontSize: "13px", outline: "none" }} 
-              />
+                onChange={e => setTargetStaffEmail(e.target.value)}
+              >
+                <option value="">-- Silahkan Pilih Staff --</option>
+                {dbStaffList
+                  .filter(s => s.email !== selectedStaff) // Menyembunyikan diri sendiri dari list "Orang Lain"
+                  .map((staff, idx) => (
+                    <option key={idx} value={staff.email}>
+                      {staff.name} ({staff.email})
+                    </option>
+                  ))
+                }
+              </select>
               
-              {targetStaffEmail.trim() && (
-                targetStaffName ? (
-                  <span style={{ fontSize: "11px", color: "#34c759", fontWeight: "500" }}>
-                    ✅ Terdeteksi sebagai: <strong>{targetStaffName}</strong>
-                  </span>
-                ) : (
-                  <span style={{ fontSize: "11px", color: "#ff3b30", fontWeight: "500" }}>
-                    ❌ Email tidak terdaftar di database staff!
-                  </span>
-                )
+              {targetStaffEmail && (
+                <span style={{ fontSize: "11px", color: "#34c759", fontWeight: "500" }}>
+                  ✅ Siap ditugaskan kepada: <strong>{targetStaffName}</strong>
+                </span>
               )}
             </div>
           )}
