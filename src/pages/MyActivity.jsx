@@ -160,14 +160,23 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     let finalAssignee = currentStaffName;
     
     if (assignType === "other") {
-      if (!targetStaffEmail.trim()) {
+      const cleanedEmail = targetStaffEmail.trim().toLowerCase();
+      if (!cleanedEmail) {
         return alert("Silakan isi alamat email staff tujuan terlebih dahulu!");
       }
-      if (!targetStaffEmail.includes("@")) {
-        return alert("Format email tidak valid! Pastikan menggunakan karakter '@'.");
+
+      // Validasi ketat: Mencari data staff berdasarkan email di dalam staffList
+      const matchedStaff = staffList.find(
+        (s) => s && typeof s === "object" && s.email?.toLowerCase() === cleanedEmail
+      );
+
+      // Jika email tidak ditemukan di database/tabel staff, hentikan proses
+      if (!matchedStaff || !matchedStaff.name) {
+        return alert("❌ Email tidak terdaftar di database staff. Mohon periksa kembali email yang Anda masukkan!");
       }
-      // Nama diambil dari hasil pencarian relasi email di targetStaffName
-      finalAssignee = targetStaffName;
+
+      // Jika ada, gunakan properti 'name' dari tabel staff tersebut
+      finalAssignee = matchedStaff.name;
     }
 
     const updatedHistory = [
@@ -213,7 +222,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
           }
 
           return {
-            staff_name: finalAssignee, 
+            staff_name: finalAssignee, // Nama resmi dari tabel staff berhasil masuk kesini
             title: item.title || "Tanpa Judul",
             activity_date: targetDate,
             start_time: item.start_time || "08:00",
