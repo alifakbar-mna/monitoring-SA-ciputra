@@ -52,8 +52,8 @@ export default function Dashboard({
       }}>
         Monitoring SA Activity
       </h1>
-      <p style={{ color: "var(--apple-text-sub)", fontSize: "17px", marginBottom: "30px", maxWidth: "600px", lineHeight: "1.5" }}>
-        Sistem manajemen aktivitas dan pendampingan <strong>Organisasi Mahasiswa (Ormawa)</strong> Universitas Ciputra Surabaya oleh divisi Student Affairs.
+      <p style={{ color: "var(--apple-text-sub)", fontSize: "17px", marginBottom: "30px", maxWidth: "600px", lineHeight: "1.6", letterSpacing: "-0.2px" }}>
+        Pusat kontrol terpadu untuk monitoring <strong style={{ color: "#0071e3", fontWeight: "600" }}>jadwal Student Affairs</strong> dan sinkronisasi penugasan secara real-time.
       </p>
 
       {/* 🌟 BARU: Widget Ringkasan Aktivitas Real-time Pendek */}
