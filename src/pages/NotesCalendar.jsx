@@ -11,7 +11,7 @@ export default function NotesCalendar() {
 
   // State Data Catatan
   const [notes, setNotes] = useState([]);
-  const [selectedNote, setSelectedNote] = useState(null); // Menyimpan note aktif
+  const [selectedNote, setSelectedNote] = useState(null); 
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
@@ -19,8 +19,6 @@ export default function NotesCalendar() {
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-
-  // State untuk mengontrol status penyimpanan perubahan edit di modal detail
   const [isUpdating, setIsUpdating] = useState(false);
 
   const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
@@ -54,16 +52,16 @@ export default function NotesCalendar() {
     fetchNotes();
   }, [fetchNotes]);
 
-  // 2. REAL-TIME LISTENER: Otomatis mendengarkan perubahan tabel notes
+  // 2. REAL-TIME LISTENER MUTLAK: Mendengarkan INSERT, UPDATE, dan DELETE secara instan
   useEffect(() => {
     const channel = supabase
-      .channel("public:notes-realtime-channel")
+      .channel("public:notes-optimized-channel")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notes" },
         (payload) => {
-          console.log("Database Notes berubah!", payload);
-          fetchNotes();
+          console.log("Sinkronisasi Real-time dipicu:", payload);
+          fetchNotes(); // Tarik ulang state lokal agar kalender & panel langsung berubah
         }
       )
       .subscribe();
@@ -113,7 +111,7 @@ export default function NotesCalendar() {
     return cells;
   }, [currentDate]);
 
-  // Pengelompokan baris catatan berdasarkan tanggal
+  // Pengelompokan catatan berdasarkan tanggal
   const notesGroupedByDate = useMemo(() => {
     const groups = {};
     notes.forEach(note => {
@@ -140,24 +138,27 @@ export default function NotesCalendar() {
 
   const handleNoteTextClick = (e, note) => {
     e.stopPropagation(); 
-    setSelectedNote({ ...note }); // Menyalin object agar manipulasi input aman
+    setSelectedNote({ ...note }); 
     setIsDetailModalOpen(true);
   };
 
-  // Simpan data catatan baru ke database
+  // Simpan data catatan baru ke database (Langsung muncul di UI via Realtime)
   const handleSaveNote = async (e) => {
     e.preventDefault();
     if (!noteTitle.trim()) return alert("Judul Catatan tidak boleh kosong!");
 
     setIsSaving(true);
     try {
-      const { error } = await supabase.from("notes").insert([{
+      const { data, error } = await supabase.from("notes").insert([{
         title: noteTitle.trim(),
         content: noteContent.trim(),
         note_date: selectedDateStr
-      }]);
+      }]).select();
 
       if (error) throw error;
+
+      // Optimistic UI Update: Tambahkan langsung ke state lokal agar instan tanpa jeda network
+      if (data) setNotes(prev => [...prev, ...data]);
 
       setNoteTitle("");
       setNoteContent("");
@@ -170,55 +171,63 @@ export default function NotesCalendar() {
     }
   };
 
-  // Fungsi Update Perubahan Catatan (Simpan Otomatis / Manual dari Editor)
-  const handleUpdateNoteDetails = async (e) => {
-    if (e) e.preventDefault();
-    if (!selectedNote || !selectedNote.title.trim()) return alert("Judul catatan tidak boleh kosong!");
+  // 🌟 AUTOSAVE & UPDATE OTOMATIS: Dipanggil setiap kali kursor berpindah atau tombol selesai diklik
+  const handleAutosaveNoteDetails = async (targetNote) => {
+    const noteToSave = targetNote || selectedNote;
+    if (!noteToSave || !noteToSave.title.trim()) return;
 
     setIsUpdating(true);
     try {
       const { error } = await supabase
         .from("notes")
         .update({
-          title: selectedNote.title.trim(),
-          content: selectedNote.content.trim()
+          title: noteToSave.title.trim(),
+          content: noteToSave.content.trim()
         })
-        .eq("id", selectedNote.id);
+        .eq("id", noteToSave.id);
 
       if (error) throw error;
-      console.log("Perubahan catatan berhasil diperbarui.");
+
+      // Optimistic Update Lokal: langsung perbarui list tanpa menunggu broadcast realtime
+      setNotes(prev => prev.map(item => item.id === noteToSave.id ? { ...item, title: noteToSave.title, content: noteToSave.content } : item));
     } catch (err) {
-      console.error("Gagal memperbarui catatan:", err.message);
+      console.error("Gagal melakukan autosave:", err.message);
     } finally {
       setIsUpdating(false);
     }
   };
 
-  // Fungsi Hapus Catatan dengan Double-Check
+  // 🌟 TOMBOL SELESAI: Otomatis jalankan save terakhir sebelum menutup modal
+  const handleCloseAndSave = async () => {
+    if (selectedNote) {
+      await handleAutosaveNoteDetails(selectedNote);
+    }
+    setIsDetailModalOpen(false);
+    setSelectedNote(null);
+  };
+
+  // 🌟 1 KLIk DELETE (Single Check): Langsung hapus dengan satu kali konfirmasi yakin
   const handleDeleteNote = async (id) => {
     if (!id) return;
     
-    // Tahap Verifikasi Keamanan Penghapusan
-    const firstCheck = window.confirm("Apakah Anda yakin ingin menghapus catatan ini?");
-    if (!firstCheck) return;
-
-    const secondCheck = window.confirm("⚠️ PERINGATAN: Catatan yang dihapus tidak dapat dikembalikan. Lanjutkan proses hapus?");
-    if (!secondCheck) return;
+    const confirmDelete = window.confirm("Apakah Anda yakin ingin menghapus catatan ini secara permanen?");
+    if (!confirmDelete) return;
 
     try {
+      // Optimistic UI: hapus dari state lokal agar efek visual langsung hilang seketika
+      setNotes(prev => prev.filter(item => item.id !== id));
+      setIsDetailModalOpen(false);
+      setSelectedNote(null);
+
       const { error } = await supabase
         .from("notes")
         .delete()
         .eq("id", id);
 
       if (error) throw error;
-
-      setIsDetailModalOpen(false);
-      setSelectedNote(null);
-      alert("Catatan berhasil dihapus dari database.");
     } catch (err) {
       console.error("Gagal menghapus catatan:", err.message);
-      alert("Gagal menghapus catatan.");
+      fetchNotes(); // rollback jika server gagal melayani request
     }
   };
 
@@ -251,10 +260,9 @@ export default function NotesCalendar() {
         .note-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .modal-input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #d2d2d7; margin-bottom: 14px; font-size: 14px; box-sizing: border-box; outline: none; }
         
-        /* Gaya Khusus Editor Lebar Modern */
         .editor-title-input { width: 100%; font-size: 24px; font-weight: 700; border: none; outline: none; color: #1d1d1f; margin-bottom: 8px; padding: 4px 0; background: transparent; }
-        .editor-textarea { width: 100%; min-height: 320px; border: none; outline: none; resize: none; font-size: 15px; line-height: 1.6; color: #333336; background: transparent; padding: 0; }
-        .btn-danger { padding: 8px 16px; background-color: #fff; color: #ff3b30; border: 1px solid #ff3b30; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .editor-textarea { width: 100%; min-height: 340px; border: none; outline: none; resize: none; font-size: 15px; line-height: 1.6; color: #333336; background: transparent; padding: 0; }
+        .btn-danger { padding: 10px 20px; background-color: #fff; color: #ff3b30; border: 1px solid #ff3b30; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
         .btn-danger:hover { background-color: #fff2f2; }
       `}</style>
 
@@ -387,46 +395,52 @@ export default function NotesCalendar() {
         </div>
       )}
 
-      {/* MODAL 2: INTERAKTIF PANEL EDITOR LEBAR (BACA, EDIT INLINE & HAPUS) */}
+      {/* MODAL 2: PANEL WRITER MODERN DENGAN SISTEM AUTOSAVE & HANYA 2 TOMBOL UTAMA */}
       {isDetailModalOpen && selectedNote && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.3)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200 }}>
           <div style={{ backgroundColor: "#ffffff", width: "90%", maxWidth: "800px", padding: "35px", borderRadius: "20px", boxShadow: "0 12px 40px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column" }}>
             
-            {/* Header Informasi Modal */}
+            {/* Header Status Editor */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f5f5f7", paddingBottom: "14px", marginBottom: "20px" }}>
               <div style={{ fontSize: "13px", color: "#86868b", fontWeight: 500 }}>
                 📅 Terjadwal: <span style={{ color: "#0071e3", fontWeight: 600 }}>{formatFriendlyDate(selectedNote.note_date)}</span>
               </div>
               <div style={{ fontSize: "12px", color: "#86868b", fontStyle: "italic" }}>
-                {isUpdating ? "🔄 Sedang menyimpan..." : "✨ Mode Edit Langsung Aktif"}
+                {isUpdating ? "🔄 Menyimpan ke cloud..." : "✓ Tersimpan"}
               </div>
             </div>
 
-            {/* Area Workspace Penulisan Catatan */}
+            {/* Editor Workspace */}
             <div style={{ backgroundColor: "#fbfbfe", padding: "20px", borderRadius: "12px", border: "1px solid #e5e5ea" }}>
-              {/* Input Judul Catatan */}
               <input 
                 type="text"
                 className="editor-title-input"
                 value={selectedNote.title}
-                placeholder="Judul Tanpa Nama"
-                onChange={e => setSelectedNote({ ...selectedNote, title: e.target.value })}
-                onBlur={handleUpdateNoteDetails} // Otomatis simpan saat kursor keluar
+                placeholder="Judul Catatan"
+                onChange={e => {
+                  const updated = { ...selectedNote, title: e.target.value };
+                  setSelectedNote(updated);
+                  handleAutosaveNoteDetails(updated); // Simpan otomatis setiap perubahan karakter
+                }}
+                onBlur={() => handleAutosaveNoteDetails(selectedNote)}
               />
               
-              {/* Input Konten Catatan */}
               <textarea
                 className="editor-textarea"
                 value={selectedNote.content}
                 placeholder="Mulai ketik isi tulisan atau dokumentasi agenda Anda disini..."
-                onChange={e => setSelectedNote({ ...selectedNote, content: e.target.value })}
-                onBlur={handleUpdateNoteDetails} // Otomatis simpan saat kursor keluar
+                onChange={e => {
+                  const updated = { ...selectedNote, content: e.target.value };
+                  setSelectedNote(updated);
+                  handleAutosaveNoteDetails(updated); // Simpan otomatis setiap perubahan karakter
+                }}
+                onBlur={() => handleAutosaveNoteDetails(selectedNote)}
               />
             </div>
 
-            {/* Panel Tombol Aksi Bawah */}
+            {/* Panel Aksi: Hanya Ada 2 Tombol Sesuai Request */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "25px" }}>
-              {/* Tombol Hapus Utama */}
+              {/* KLIK 1: Hapus Catatan */}
               <button 
                 type="button" 
                 className="btn-danger"
@@ -435,25 +449,14 @@ export default function NotesCalendar() {
                 🗑️ Hapus Catatan
               </button>
 
-              <div style={{ display: "flex", gap: "10px" }}>
-                {/* Tombol Simpan Manual */}
-                <button
-                  type="button"
-                  onClick={handleUpdateNoteDetails}
-                  style={{ padding: "10px 20px", background: "#34c759", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}
-                >
-                  Simpan Perubahan
-                </button>
-
-                {/* Tombol Selesai */}
-                <button 
-                  type="button" 
-                  onClick={() => { setIsDetailModalOpen(false); setSelectedNote(null); }} 
-                  style={{ padding: "10px 20px", background: "#0071e3", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}
-                >
-                  Selesai & Keluar
-                </button>
-              </div>
+              {/* KLIK 2: Selesai & Keluar (Otomatis Menyimpan Sisa Perubahan) */}
+              <button 
+                type="button" 
+                onClick={handleCloseAndSave} 
+                style={{ padding: "12px 28px", background: "#0071e3", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: 600 }}
+              >
+                Selesai & Keluar
+              </button>
             </div>
 
           </div>
