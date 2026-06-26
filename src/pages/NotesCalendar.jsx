@@ -52,23 +52,25 @@ export default function NotesCalendar() {
   }, [fetchNotes]);
 
   // 2. LOGIKA UTAMA REAL-TIME: Otomatis perbarui state tanpa refresh halaman
-  useEffect(() => {
+    useEffect(() => {
     const channel = supabase
-      .channel("realtime-notes-channel")
-      .on(
+        .channel("public:notes") // Menggunakan nama namespace skema yang direkomendasikan Supabase
+        .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notes" },
-        () => {
-          console.log("Database berubah! Memperbarui tampilan kalender...");
-          fetchNotes();
+        (payload) => {
+            console.log("Database Notes berubah!", payload);
+            fetchNotes(); // Ambil data teranyar dari database
         }
-      )
-      .subscribe();
+        )
+        .subscribe((status) => {
+        console.log("Status koneksi Realtime Notes:", status);
+        });
 
     return () => {
-      supabase.removeChannel(channel);
+        supabase.removeChannel(channel);
     };
-  }, [fetchNotes]);
+    }, [fetchNotes]);
 
   // Generasi Grid Tanggal Kalender (3 Lapisan Grid: Padding Awal, Bulan Aktif, Padding Akhir)
   const calendarCells = useMemo(() => {

@@ -126,15 +126,23 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
   const handleToggleCardComplete = async (activityId, currentStatus) => {
+    const nextStatus = !currentStatus;
+
+    // 1. Jalankan update status ke database
     const { error } = await supabase
       .from("activities")
-      .update({ is_completed: !currentStatus })
+      .update({ is_completed: nextStatus })
       .eq("id", activityId);
 
     if (!error) {
-      if (onUpdateActivity) onUpdateActivity(); 
+      // 2. JIKA BERHASIL: Panggil onUpdateActivity tanpa parameter 
+      // agar memicu fungsi fetch ulang global di App.jsx
+      if (onUpdateActivity) {
+        onUpdateActivity(); 
+      }
     } else {
       console.error("Gagal merubah status card:", error);
+      alert("Koneksi gagal. Gagal memperbarui status ke database.");
     }
   };
 
