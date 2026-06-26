@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react"; // Tambahkan useEffect
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "../supabase";
 
 export default function MyActivity({ activities = [], selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity }) {
@@ -12,7 +12,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [assignType, setAssignType] = useState("self"); 
   const [targetStaffEmail, setTargetStaffEmail] = useState(""); 
   
-  // 🌟 BARU: State untuk menampung daftar staff dari database
+  // State untuk menampung daftar staff dari database
   const [dbStaffList, setDbStaffList] = useState([]);
 
   // State Manajemen Aksi Edit & Delete Modal
@@ -23,89 +23,81 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [dateFilterType, setDateFilterType] = useState("Semua"); 
   const [customStartDate, setCustomStartDate] = useState("");
 
-  /**
-   * 🌟 BARU: Mengambil seluruh data staff dari table 'staff' di Supabase
-   */
-  useEffect(() => {
-    const fetchStaffList = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("staff")
-          .select("name, email"); // Mengambil kolom name dan email
-        
-        if (error) throw error;
-        if (data) setDbStaffList(data);
-      } catch (err) {
-        console.error("Gagal mengambil data staff:", err.message);
-      }
-    };
-
-    fetchStaffList();
+  // 1. Mengambil seluruh data staff dari table 'staff' di Supabase
+  const fetchStaffList = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("staff")
+        .select("name, email");
+      
+      if (error) throw error;
+      if (data) setDbStaffList(data);
+    } catch (err) {
+      console.error("Gagal mengambil data staff:", err.message);
+    }
   }, []);
 
-  /**
-   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri):
-   * Mengambil nama lengkap staff dari array objek `dbStaffList` berdasarkan email di `selectedStaff`.
-   */
+  useEffect(() => {
+    fetchStaffList();
+  }, [fetchStaffList]);
+
+  // 🌟 LOGIKA REAL-TIME TAMBAHAN: Langsung dengarkan perubahan tabel activities dari halaman ini
+  useEffect(() => {
+    const channel = supabase
+      .channel("public:activities-myactivity")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "activities" },
+        () => {
+          console.log("Database aktivitas berubah! Memicu update global...");
+          if (onUpdateActivity) onUpdateActivity();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [onUpdateActivity]);
+
+  // JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri)
   const currentStaffName = useMemo(() => {
     if (!selectedStaff) return "";
-    
     const safeStaffList = Array.isArray(dbStaffList) ? dbStaffList : [];
-    const foundStaff = safeStaffList.find(
-      (s) => s && typeof s === "object" && s.email === selectedStaff
-    );
+    const foundStaff = safeStaffList.find((s) => s && s.email === selectedStaff);
 
-    if (foundStaff && foundStaff.name) {
-      return foundStaff.name;
-    }
-    
+    if (foundStaff && foundStaff.name) return foundStaff.name;
     return selectedStaff.includes("@") ? selectedStaff.split("@")[0] : selectedStaff;
   }, [selectedStaff, dbStaffList]);
 
-  /**
-   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain):
-   * Mencari nama lengkap staff tujuan berdasarkan teks `targetStaffEmail` dari dropdown.
-   */
+  // JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain)
   const targetStaffName = useMemo(() => {
     const cleanedEmail = targetStaffEmail.trim().toLowerCase();
     if (!cleanedEmail) return null;
-
     const safeStaffList = Array.isArray(dbStaffList) ? dbStaffList : [];
+    const foundStaff = safeStaffList.find((s) => s && s.email?.toLowerCase() === cleanedEmail);
 
-    const foundStaff = safeStaffList.find((s) => {
-      if (!s) return false;
-      return s.email?.toLowerCase() === cleanedEmail;
-    });
-
-    if (foundStaff && foundStaff.name) {
-      return foundStaff.name;
-    }
-
+    if (foundStaff && foundStaff.name) return foundStaff.name;
     return null;
   }, [targetStaffEmail, dbStaffList]);
-
 
   // LOGIKA PENYARINGAN DATA AKTIVITAS
   const filteredActivities = useMemo(() => {
     const todayObj = new Date();
     const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-
     const safeActivities = Array.isArray(activities) ? activities : [];
 
     return safeActivities
       .filter(act => {
-        const isAssignedToMe = act.staff_name === currentStaffName;
-        const isAssignedByMe = act.description && act.description.includes(`Ditugaskan oleh ${currentStaffName}`);
+        // Toleransi filter: Jika pemetaan nama belum selesai, gunakan pencocokan email awal untuk fallback
+        const emailFallback = selectedStaff && selectedStaff.includes("@") ? selectedStaff.split("@")[0] : "";
+        const isAssignedToMe = act.staff_name === currentStaffName || (act.staff_name && act.staff_name.toLowerCase() === emailFallback.toLowerCase());
+        const isAssignedByMe = act.description && (act.description.includes(`Ditugaskan oleh ${currentStaffName}`) || act.description.includes(`Ditugaskan oleh ${emailFallback}`));
 
-        if (!isAssignedToMe && !isAssignedByMe) {
-          return false;
-        }
+        if (!isAssignedToMe && !isAssignedByMe) return false;
         
-        if (dateFilterType === "Hari Ini") {
-          return act.activity_date === todayStr;
-        } else if (dateFilterType === "Kustom" && customStartDate) {
-          return act.activity_date >= customStartDate;
-        }
+        if (dateFilterType === "Hari Ini") return act.activity_date === todayStr;
+        if (dateFilterType === "Kustom" && customStartDate) return act.activity_date >= customStartDate;
         
         return true; 
       })
@@ -115,7 +107,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         }
         return (a.activity_date || "") > (b.activity_date || "") ? 1 : -1;
       });
-  }, [activities, currentStaffName, dateFilterType, customStartDate]);
+  }, [activities, currentStaffName, selectedStaff, dateFilterType, customStartDate]);
 
   const formatTime = (timeStr) => {
     if (!timeStr || !timeStr.includes(":")) return timeStr || "";
@@ -127,32 +119,21 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
   const handleToggleCardComplete = async (activityId, currentStatus) => {
     const nextStatus = !currentStatus;
-
-    // 1. Jalankan update status ke database
     const { error } = await supabase
       .from("activities")
       .update({ is_completed: nextStatus })
       .eq("id", activityId);
 
     if (!error) {
-      // 2. JIKA BERHASIL: Panggil onUpdateActivity tanpa parameter 
-      // agar memicu fungsi fetch ulang global di App.jsx
-      if (onUpdateActivity) {
-        onUpdateActivity(); 
-      }
+      if (onUpdateActivity) onUpdateActivity(); 
     } else {
       console.error("Gagal merubah status card:", error);
-      alert("Koneksi gagal. Gagal memperbarui status ke database.");
     }
   };
 
   const handleDeleteActivity = async (id) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus tugas manual ini?")) {
-      const { error } = await supabase
-        .from("activities")
-        .delete()
-        .eq("id", id);
-
+      const { error } = await supabase.from("activities").delete().eq("id", id);
       if (!error) {
         alert("Tugas manual berhasil dihapus.");
         if (onUpdateActivity) onUpdateActivity();
@@ -187,7 +168,6 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     }
   };
 
-  // LOGIKA KIRIM TUGAS
   const handleSendAiMessage = async () => {
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
@@ -196,14 +176,8 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     
     if (assignType === "other") {
       const cleanedEmail = targetStaffEmail.trim().toLowerCase();
-      if (!cleanedEmail) {
-        return alert("Silakan pilih staff tujuan terlebih dahulu!");
-      }
-
-      if (!targetStaffName) {
-        return alert("❌ Staff tidak ditemukan! Silakan periksa kembali pilihan Anda.");
-      }
-
+      if (!cleanedEmail) return alert("Silakan pilih staff tujuan terlebih dahulu!");
+      if (!targetStaffName) return alert("❌ Staff tidak ditemukan! Silakan periksa kembali pilihan Anda.");
       finalAssignee = targetStaffName;
     }
 
@@ -271,7 +245,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     } catch (err) {
       console.error(err);
       alert(err.message || "Terjadi kesalahan");
-    } finally {
+    } finaly {
       setIsAiLoading(false);
     }
   };
@@ -344,7 +318,6 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
             </select>
           </div>
 
-          {/* 🌟 PERBAIKAN: SEKARANG MENGGUNAKAN DROPDOWN <select> DINAMIS DARI DATABASE */}
           {assignType === "other" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
               <label style={{ fontSize: "11px", fontWeight: 600, color: "#86868b" }}>Pilih Staff Tujuan:</label>
@@ -355,7 +328,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
               >
                 <option value="">-- Silahkan Pilih Staff --</option>
                 {dbStaffList
-                  .filter(s => s.email !== selectedStaff) // Menyembunyikan diri sendiri dari list "Orang Lain"
+                  .filter(s => s.email !== selectedStaff)
                   .map((staff, idx) => (
                     <option key={idx} value={staff.email}>
                       {staff.name} ({staff.email})
@@ -417,7 +390,6 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
                     )}
                   </div>
 
-                  {/* Label Visual Indikator Delegasi */}
                   {act.staff_name !== currentStaffName && (
                     <div style={{ backgroundColor: "#f2f7ff", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", color: "#0071e3", marginBottom: "8px", fontWeight: "600", display: "inline-block" }}>
                       👤 Ditugaskan ke: {act.staff_name}
