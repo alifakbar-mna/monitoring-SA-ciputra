@@ -11,19 +11,22 @@ export default function NotesCalendar() {
 
   // State Data Catatan
   const [notes, setNotes] = useState([]);
-  const [selectedNote, setSelectedNote] = useState(null); // Menyimpan note aktif saat diklik judulnya
+  const [selectedNote, setSelectedNote] = useState(null); // Menyimpan note aktif
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
-  // State Form Form Input Note Baru
+  // State Form Input Note Baru
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // State untuk mengontrol status penyimpanan perubahan edit di modal detail
+  const [isUpdating, setIsUpdating] = useState(false);
+
   const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
   const dayNames = ["Ming", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
-  // 1. Fungsi Fetch Data Menggunakan Callback agar Sinkron dengan Real-time Listener
+  // 1. Fungsi Fetch Data Catatan
   const fetchNotes = useCallback(async () => {
     const year = currentDate.getFullYear();
     const month = String(currentDate.getMonth() + 1).padStart(2, '0');
@@ -51,28 +54,26 @@ export default function NotesCalendar() {
     fetchNotes();
   }, [fetchNotes]);
 
-  // 2. LOGIKA UTAMA REAL-TIME: Otomatis perbarui state tanpa refresh halaman
-    useEffect(() => {
+  // 2. REAL-TIME LISTENER: Otomatis mendengarkan perubahan tabel notes
+  useEffect(() => {
     const channel = supabase
-        .channel("public:notes") // Menggunakan nama namespace skema yang direkomendasikan Supabase
-        .on(
+      .channel("public:notes-realtime-channel")
+      .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notes" },
         (payload) => {
-            console.log("Database Notes berubah!", payload);
-            fetchNotes(); // Ambil data teranyar dari database
+          console.log("Database Notes berubah!", payload);
+          fetchNotes();
         }
-        )
-        .subscribe((status) => {
-        console.log("Status koneksi Realtime Notes:", status);
-        });
+      )
+      .subscribe();
 
     return () => {
-        supabase.removeChannel(channel);
+      supabase.removeChannel(channel);
     };
-    }, [fetchNotes]);
+  }, [fetchNotes]);
 
-  // Generasi Grid Tanggal Kalender (3 Lapisan Grid: Padding Awal, Bulan Aktif, Padding Akhir)
+  // Generasi Grid Tanggal Kalender
   const calendarCells = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -112,7 +113,7 @@ export default function NotesCalendar() {
     return cells;
   }, [currentDate]);
 
-  // Pengelompokan baris catatan berdasarkan tanggal untuk kemudahan render di dalam sel grid
+  // Pengelompokan baris catatan berdasarkan tanggal
   const notesGroupedByDate = useMemo(() => {
     const groups = {};
     notes.forEach(note => {
@@ -137,14 +138,13 @@ export default function NotesCalendar() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
   };
 
-  // Handler saat elemen judul teks di dalam kalender diklik
   const handleNoteTextClick = (e, note) => {
-    e.stopPropagation(); // Mencegah sel induk terpicu/berubah tanggal secara tidak sengaja
-    setSelectedNote(note);
+    e.stopPropagation(); 
+    setSelectedNote({ ...note }); // Menyalin object agar manipulasi input aman
     setIsDetailModalOpen(true);
   };
 
-  // Simpan data Form inputan ke database Supabase
+  // Simpan data catatan baru ke database
   const handleSaveNote = async (e) => {
     e.preventDefault();
     if (!noteTitle.trim()) return alert("Judul Catatan tidak boleh kosong!");
@@ -162,7 +162,6 @@ export default function NotesCalendar() {
       setNoteTitle("");
       setNoteContent("");
       setIsFormModalOpen(false);
-      // fetchNotes() tidak mutlak diwajibkan di sini karena listener realtime di atas otomatis akan mendengarkan event insert ini
     } catch (err) {
       console.error(err);
       alert("Gagal menyimpan catatan.");
@@ -171,28 +170,79 @@ export default function NotesCalendar() {
     }
   };
 
+  // Fungsi Update Perubahan Catatan (Simpan Otomatis / Manual dari Editor)
+  const handleUpdateNoteDetails = async (e) => {
+    if (e) e.preventDefault();
+    if (!selectedNote || !selectedNote.title.trim()) return alert("Judul catatan tidak boleh kosong!");
+
+    setIsUpdating(true);
+    try {
+      const { error } = await supabase
+        .from("notes")
+        .update({
+          title: selectedNote.title.trim(),
+          content: selectedNote.content.trim()
+        })
+        .eq("id", selectedNote.id);
+
+      if (error) throw error;
+      console.log("Perubahan catatan berhasil diperbarui.");
+    } catch (err) {
+      console.error("Gagal memperbarui catatan:", err.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Fungsi Hapus Catatan dengan Double-Check
+  const handleDeleteNote = async (id) => {
+    if (!id) return;
+    
+    // Tahap Verifikasi Keamanan Penghapusan
+    const firstCheck = window.confirm("Apakah Anda yakin ingin menghapus catatan ini?");
+    if (!firstCheck) return;
+
+    const secondCheck = window.confirm("⚠️ PERINGATAN: Catatan yang dihapus tidak dapat dikembalikan. Lanjutkan proses hapus?");
+    if (!secondCheck) return;
+
+    try {
+      const { error } = await supabase
+        .from("notes")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      setIsDetailModalOpen(false);
+      setSelectedNote(null);
+      alert("Catatan berhasil dihapus dari database.");
+    } catch (err) {
+      console.error("Gagal menghapus catatan:", err.message);
+      alert("Gagal menghapus catatan.");
+    }
+  };
+
   const formatFriendlyDate = (dateStr) => {
-    const [y, m, d] = dateStr.split("-");
+    if (!dateStr) return "";
+    const parts = dateStr.split("-");
+    if (parts.length !== 3) return dateStr;
+    const [y, m, d] = parts;
     return `${parseInt(d)} ${monthNames[parseInt(m) - 1]} ${y}`;
   };
 
   return (
-    <div style={{ padding: "20px 40px", position: "relative", minHeight: "calc(100vh - 40px)" }}>
+    <div style={{ padding: "20px 40px", position: "relative", minHeight: "calc(100vh - 40px)", fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif" }}>
       <style>{`
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
         .day-header { text-align: center; font-size: 13px; font-weight: 600; color: #86868b; padding: 8px 0; }
         
-        /* Mengubah struktur sel agar flex-start dan tinggi wadah bertambah agar muat judul */
-        .calendar-cell { background: #fff; border-radius: 10px; min-height: 105px; padding: 8px; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; cursor: pointer; border: 1px solid #f5f5f7; transition: all 0.15s ease; box-sizing: border-box; }
+        .calendar-cell { background: #fff; border-radius: 10px; min-height: 115px; padding: 8px; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; cursor: pointer; border: 1px solid #f5f5f7; transition: all 0.15s ease; box-sizing: border-box; }
         .calendar-cell:hover { background: #f2f7ff; border-color: #0071e3; }
         .calendar-cell.active { background: #f4f8ff !important; border-color: #0071e3; box-shadow: inset 0 0 0 1px #0071e3; }
         .calendar-cell.inactive { opacity: 0.35; background: #fafafa; }
         
-        /* Desain block judul note di dalam sel kalender */
         .calendar-note-link { display: block; width: 100%; text-align: left; background-color: #0071e3; color: #fff; border: none; border-radius: 4px; padding: 3px 6px; margin-top: 4px; font-size: 11px; font-weight: 500; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; transition: background-color 0.1s; }
         .calendar-note-link:hover { background-color: #005bb5; }
-        .calendar-cell.active .calendar-note-link { background-color: #0071e3; }
-        .calendar-cell.active .calendar-note-link:hover { background-color: #005bb5; }
 
         .floating-fab { position: fixed; bottom: 35px; right: 40px; width: 56px; height: 56px; border-radius: 28px; background: #0071e3; color: #fff; border: none; font-size: 28px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,113,227,0.35); transition: transform 0.2s; z-index: 999; }
         .floating-fab:hover { transform: scale(1.06); background: #0077ed; }
@@ -200,6 +250,12 @@ export default function NotesCalendar() {
         .note-card { background: #fff; border-radius: 12px; padding: 16px; border-left: 4px solid #0071e3; box-shadow: 0 2px 8px rgba(0,0,0,0.02); margin-bottom: 12px; cursor: pointer; transition: transform 0.15s; }
         .note-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .modal-input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #d2d2d7; margin-bottom: 14px; font-size: 14px; box-sizing: border-box; outline: none; }
+        
+        /* Gaya Khusus Editor Lebar Modern */
+        .editor-title-input { width: 100%; font-size: 24px; font-weight: 700; border: none; outline: none; color: #1d1d1f; margin-bottom: 8px; padding: 4px 0; background: transparent; }
+        .editor-textarea { width: 100%; min-height: 320px; border: none; outline: none; resize: none; font-size: 15px; line-height: 1.6; color: #333336; background: transparent; padding: 0; }
+        .btn-danger { padding: 8px 16px; background-color: #fff; color: #ff3b30; border: 1px solid #ff3b30; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-danger:hover { background-color: #fff2f2; }
       `}</style>
 
       {/* HEADER UTAMA */}
@@ -212,7 +268,7 @@ export default function NotesCalendar() {
       <div style={{ display: "flex", gap: "30px", flexWrap: "wrap", alignItems: "flex-start" }}>
         
         {/* PANEL KALENDER */}
-        <div style={{ flex: "1 1 650px", backgroundColor: "#fff", padding: "20px", borderRadius: "14px", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
+        <div style={{ flex: "2 1 650px", backgroundColor: "#fff", padding: "20px", borderRadius: "14px", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
             <span style={{ fontSize: "17px", fontWeight: 700 }}>{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</span>
             <div style={{ display: "flex", gap: "8px" }}>
@@ -227,8 +283,6 @@ export default function NotesCalendar() {
             {calendarCells.map((cell, idx) => {
               const isCellSelected = selectedDateStr === cell.dateStr;
               const cellNotes = notesGroupedByDate[cell.dateStr] || [];
-              
-              // Cek apakah tanggal sel kalender ini sama dengan hari ini (Today) untuk penanda visual nomor teks
               const isToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}` === cell.dateStr;
 
               return (
@@ -249,7 +303,6 @@ export default function NotesCalendar() {
                     {cell.dayNum}
                   </span>
                   
-                  {/* Container List Judul Notes (Menggantikan Titik Biru) */}
                   <div style={{ width: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                     {cellNotes.map(note => (
                       <button
@@ -269,7 +322,7 @@ export default function NotesCalendar() {
         </div>
 
         {/* PANEL DAFTAR NOTE HARIAN (SISI KANAN) */}
-        <div style={{ flex: "1 1 300px", minWidth: "300px" }}>
+        <div style={{ flex: "1 1 320px", minWidth: "300px" }}>
           <h3 style={{ margin: "0 0 15px 0", fontSize: "18px", fontWeight: 700 }}>
             Agenda: <span style={{ color: "#0071e3" }}>{formatFriendlyDate(selectedDateStr)}</span>
           </h3>
@@ -294,7 +347,7 @@ export default function NotesCalendar() {
 
       </div>
 
-      {/* FLOATING ACTION BUTTON (+)_ */}
+      {/* FLOATING ACTION BUTTON (+) */}
       <button className="floating-fab" onClick={() => setIsFormModalOpen(true)} title="Tambah Catatan Baru">+</button>
 
       {/* MODAL 1: FORM TAMBAH NOTE BARU */}
@@ -334,36 +387,75 @@ export default function NotesCalendar() {
         </div>
       )}
 
-      {/* MODAL 2: DETAIL BACA NOTE (TERPICU SAAT JUDUL DIKLIK) */}
+      {/* MODAL 2: INTERAKTIF PANEL EDITOR LEBAR (BACA, EDIT INLINE & HAPUS) */}
       {isDetailModalOpen && selectedNote && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.3)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200 }}>
-          <div style={{ backgroundColor: "#fff", width: "100%", maxWidth: "480px", padding: "25px", borderRadius: "16px", boxShadow: "0 8px 30px rgba(0,0,0,0.15)" }}>
-            <h3 style={{ margin: "0 0 6px 0", fontSize: "20px", fontWeight: 700, color: "#1d1d1f" }}>{selectedNote.title}</h3>
-            <p style={{ fontSize: "12px", color: "#0071e3", fontWeight: 600, margin: "0 0 16px 0" }}>📅 Terjadwal: {formatFriendlyDate(selectedNote.note_date)}</p>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.3)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200 }}>
+          <div style={{ backgroundColor: "#ffffff", width: "90%", maxWidth: "800px", padding: "35px", borderRadius: "20px", boxShadow: "0 12px 40px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column" }}>
             
-            <div style={{ 
-              backgroundColor: "#f5f5f7", 
-              padding: "15px", 
-              borderRadius: "10px", 
-              maxHeight: "280px", 
-              overflowY: "auto", 
-              fontSize: "14px", 
-              color: "#333", 
-              lineHeight: "1.5", 
-              whiteSpace: "pre-wrap" 
-            }}>
-              {selectedNote.content || <em style={{ color: "#86868b" }}>Tidak ada isi detail deskripsi untuk catatan ini.</em>}
+            {/* Header Informasi Modal */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f5f5f7", paddingBottom: "14px", marginBottom: "20px" }}>
+              <div style={{ fontSize: "13px", color: "#86868b", fontWeight: 500 }}>
+                📅 Terjadwal: <span style={{ color: "#0071e3", fontWeight: 600 }}>{formatFriendlyDate(selectedNote.note_date)}</span>
+              </div>
+              <div style={{ fontSize: "12px", color: "#86868b", fontStyle: "italic" }}>
+                {isUpdating ? "🔄 Sedang menyimpan..." : "✨ Mode Edit Langsung Aktif"}
+              </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
+            {/* Area Workspace Penulisan Catatan */}
+            <div style={{ backgroundColor: "#fbfbfe", padding: "20px", borderRadius: "12px", border: "1px solid #e5e5ea" }}>
+              {/* Input Judul Catatan */}
+              <input 
+                type="text"
+                className="editor-title-input"
+                value={selectedNote.title}
+                placeholder="Judul Tanpa Nama"
+                onChange={e => setSelectedNote({ ...selectedNote, title: e.target.value })}
+                onBlur={handleUpdateNoteDetails} // Otomatis simpan saat kursor keluar
+              />
+              
+              {/* Input Konten Catatan */}
+              <textarea
+                className="editor-textarea"
+                value={selectedNote.content}
+                placeholder="Mulai ketik isi tulisan atau dokumentasi agenda Anda disini..."
+                onChange={e => setSelectedNote({ ...selectedNote, content: e.target.value })}
+                onBlur={handleUpdateNoteDetails} // Otomatis simpan saat kursor keluar
+              />
+            </div>
+
+            {/* Panel Tombol Aksi Bawah */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "25px" }}>
+              {/* Tombol Hapus Utama */}
               <button 
                 type="button" 
-                onClick={() => { setIsDetailModalOpen(false); setSelectedNote(null); }} 
-                style={{ padding: "8px 18px", background: "#0071e3", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}
+                className="btn-danger"
+                onClick={() => handleDeleteNote(selectedNote.id)}
               >
-                Selesai Membaca
+                🗑️ Hapus Catatan
               </button>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                {/* Tombol Simpan Manual */}
+                <button
+                  type="button"
+                  onClick={handleUpdateNoteDetails}
+                  style={{ padding: "10px 20px", background: "#34c759", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}
+                >
+                  Simpan Perubahan
+                </button>
+
+                {/* Tombol Selesai */}
+                <button 
+                  type="button" 
+                  onClick={() => { setIsDetailModalOpen(false); setSelectedNote(null); }} 
+                  style={{ padding: "10px 20px", background: "#0071e3", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}
+                >
+                  Selesai & Keluar
+                </button>
+              </div>
             </div>
+
           </div>
         </div>
       )}
