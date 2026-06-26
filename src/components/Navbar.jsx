@@ -6,7 +6,7 @@ export default function Navbar({
   return (
     <nav className="glass-panel" style={{ position: "sticky", top: 15, zIndex: 100, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 30px", margin: "15px 20px" }}>
       <div onClick={() => setCurrentPage("dashboard")} style={{ fontSize: "18px", fontWeight: 600, cursor: "pointer" }}>
-         Monitoring SA
+        Monitoring SA
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "25px" }}>
@@ -14,7 +14,6 @@ export default function Navbar({
         <span onClick={() => setCurrentPage("all_activity")} style={{ cursor: "pointer", fontSize: "14px", color: currentPage === "all_activity" ? "var(--apple-blue)" : "var(--apple-text-sub)" }}>All Matrix</span>
         
         {/* 🌟 PERBAIKAN: My Board sekarang mengarah ke "dashboard" sesuai dengan App.jsx */}
-        <span onClick={() => setCurrentPage("dashboard")} style={{ cursor: "pointer", fontSize: "14px", color: currentPage === "dashboard" ? "var(--apple-blue)" : "var(--apple-text-sub)" }}>My Board</span>
         
         {/* OPTIONAL: Jika kamu ingin menu khusus daftar aktivitas (MyActivity) tetap bisa diakses */}
         <span onClick={() => setCurrentPage("my_activity")} style={{ cursor: "pointer", fontSize: "14px", color: currentPage === "my_activity" ? "var(--apple-blue)" : "var(--apple-text-sub)" }}>My Activity</span>
