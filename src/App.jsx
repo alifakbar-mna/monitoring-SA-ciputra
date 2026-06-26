@@ -299,15 +299,25 @@ function App() {
     });
 
     switch (currentPage) {
-      case "dashboard": return <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
+      // 🌟 PERBAIKAN: Alirkan data activities dan handleUpdateActivity ke Dashboard via Props
+      case "dashboard": 
+        return (
+          <Dashboard 
+            setCurrentPage={setCurrentPage} 
+            currentUser={currentUser} 
+            activities={filteredActivities} 
+            onUpdateActivity={handleUpdateActivity} 
+          />
+        );
+        
       case "all_activity": return <AllActivity activities={filteredActivities} staffList={staffList} onUpdateActivity={handleUpdateActivity} currentMonth={currentMonth} currentYear={currentYear} />;
       case "my_activity": return <MyActivity activities={filteredActivities} selectedStaff={currentUser.name} currentMonth={currentMonth} currentYear={currentYear} onOpenAddModal={() => setIsModalOpen(true)} />;
-      case "admin_panel": return currentUser.role === 'admin' ? <AdminPanel /> : <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
+      case "admin_panel": return currentUser.role === 'admin' ? <AdminPanel /> : <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} activities={filteredActivities} onUpdateActivity={handleUpdateActivity} />;
       
       // 🌟 BARU: Menambahkan Router Case untuk Halaman Catatan (Notes)
       case "notes": return <NotesCalendar />;
       
-      default: return <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
+      default: return <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} activities={filteredActivities} onUpdateActivity={handleUpdateActivity} />;
     }
   };
 

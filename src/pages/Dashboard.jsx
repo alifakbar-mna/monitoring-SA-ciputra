@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo } from "react";
-import { supabase } from "../supabase";
+import { supabase } from "../supabase"; // Sesuaikan path jika berbeda
 
+// 1. Pastikan parameter fungsi menerima activities dan onUpdateActivity dari App.jsx
 export default function Dashboard({ setCurrentPage, currentUser, activities = [], onUpdateActivity }) {
 
-  // 1. 🌟 REAL-TIME LISTENER: Dengarkan perubahan tabel 'activities' dari Supabase
+  // 2. Efek Real-time Listener di Dashboard
   useEffect(() => {
     const channel = supabase
       .channel("public:activities-dashboard-realtime")
@@ -11,8 +12,8 @@ export default function Dashboard({ setCurrentPage, currentUser, activities = []
         "postgres_changes",
         { event: "*", schema: "public", table: "activities" },
         (payload) => {
-          console.log("Realtime Dashboard: Ada perubahan data di database!", payload);
-          // Pemicu fungsi fetch global di App.jsx agar state data activities ter-update
+          console.log("Realtime Dashboard: Ada perubahan data!", payload);
+          // 🌟 PERBAIKAN: Memicu pengambilan data ulang di App.jsx
           if (typeof onUpdateActivity === "function") {
             onUpdateActivity();
           }
@@ -25,8 +26,7 @@ export default function Dashboard({ setCurrentPage, currentUser, activities = []
     };
   }, [onUpdateActivity]);
 
-  // 2. LOGIKA PEMBAGIAN KOLOM (BOARD) MENGGUNAKAN DATA DARI PROPS
-  // Memisahkan aktivitas berdasarkan status is_completed secara real-time
+  // 3. Memisahkan data Todo dan Done berdasarkan staff yang login secara otomatis
   const todoActivities = useMemo(() => {
     return activities.filter((act) => !act.is_completed && act.staff_name === currentUser?.name);
   }, [activities, currentUser]);
@@ -35,36 +35,25 @@ export default function Dashboard({ setCurrentPage, currentUser, activities = []
     return activities.filter((act) => act.is_completed && act.staff_name === currentUser?.name);
   }, [activities, currentUser]);
 
-  // 3. FUNGSI UNTUK MERUBAH STATUS CHECKLIST (TOGGLE COMPLETE)
+  // 4. Contoh fungsi pemicu checklist kartu tugas Anda
   const handleToggleComplete = async (activityId, currentStatus) => {
-    const nextStatus = !currentStatus;
-
     const { error } = await supabase
       .from("activities")
-      .update({ is_completed: nextStatus })
+      .update({ is_completed: !currentStatus })
       .eq("id", activityId);
 
     if (!error) {
-      console.log("Status berhasil diperbarui di database.");
-      // Memicu App.jsx untuk memperbarui data (Opsional jika realtime delay beberapa milidetik)
+      // 🌟 PERBAIKAN: Beri tahu App.jsx jika data lokal berhasil diubah
       if (typeof onUpdateActivity === "function") {
         onUpdateActivity();
       }
     } else {
-      console.error("Gagal memperbarui status card:", error.message);
-      alert("Gagal memperbarui status. Silakan periksa koneksi Anda.");
+      console.error("Gagal memperbarui status checklist:", error.message);
     }
   };
 
-  // FORMAT JAM (Contoh: 08:00:00 -> 08.00)
-  const formatTime = (timeStr) => {
-    if (!timeStr || !timeStr.includes(":")) return timeStr || "";
-    const parts = timeStr.split(":");
-    return `${parts[0]}.${parts[1]}`;
-  };
-
   return (
-    <div style={{ padding: "30px 40px" }}>
+    <div style={{ padding: "30px 40px", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
       {/* HEADER DASHBOARD */}
       <div style={{ marginBottom: "30px" }}>
         <h2 style={{ fontSize: "26px", fontWeight: 700, margin: 0 }}>Papan Tugas Saya</h2>
@@ -95,11 +84,11 @@ export default function Dashboard({ setCurrentPage, currentUser, activities = []
                 <div key={act.id} style={{ backgroundColor: "#fff", padding: "16px", borderRadius: "10px", boxShadow: "0 2px 6px rgba(0,0,0,0.02)", border: "1px solid #e5e5ea" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                     <span style={{ fontSize: "11px", fontWeight: 600, color: "#0071e3", backgroundColor: "#f2f7ff", padding: "2px 6px", borderRadius: "4px" }}>
-                      {formatTime(act.start_time)} - {formatTime(act.end_time)}
+                      {act.start_time?.substring(0, 5)} - {act.end_time?.substring(0, 5)}
                     </span>
                     <button 
                       onClick={() => handleToggleComplete(act.id, act.is_completed)}
-                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px" }}
+                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}
                       title="Tandai Selesai"
                     >
                       ⬜
@@ -132,14 +121,14 @@ export default function Dashboard({ setCurrentPage, currentUser, activities = []
               </div>
             ) : (
               doneActivities.map((act) => (
-                <div key={act.id} style={{ backgroundColor: "#fff", padding: "16px", borderRadius: "10px", boxShadow: "0 2px 6px rgba(0,0,0,0.01)", border: "1px solid #d2d2d7", opacity: 0.7 }}>
+                <div key={act.id} style={{ backgroundColor: "#fff", padding: "16px", borderRadius: "10px", boxShadow: "0 2px 6px rgba(0,0,0,0.01)", border: "1px solid #d2d2d7", opacity: 0.6 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                     <span style={{ fontSize: "11px", fontWeight: 500, color: "#86868b", textDecoration: "line-through" }}>
-                      {formatTime(act.start_time)} - {formatTime(act.end_time)}
+                      {act.start_time?.substring(0, 5)} - {act.end_time?.substring(0, 5)}
                     </span>
                     <button 
                       onClick={() => handleToggleComplete(act.id, act.is_completed)}
-                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px" }}
+                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}
                       title="Kembalikan ke Belum Selesai"
                     >
                       ✅
