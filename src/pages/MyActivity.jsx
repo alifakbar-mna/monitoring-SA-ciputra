@@ -245,7 +245,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     } catch (err) {
       console.error(err);
       alert(err.message || "Terjadi kesalahan");
-    } finaly {
+    } finally {
       setIsAiLoading(false);
     }
   };
