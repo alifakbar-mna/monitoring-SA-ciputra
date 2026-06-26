@@ -5,7 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import AllActivity from "./pages/AllActivity";
 import MyActivity from "./pages/MyActivity";
 import AdminPanel from "./pages/AdminPanel"; 
-import NotesCalendar from "./pages/NotesCalendar"; // 🌟 BARU: Import halaman catatan kalender
+import NotesCalendar from "./pages/NotesCalendar"; 
 import AddActivityModal from "./components/AddActivityModal";
 
 function App() {
@@ -22,7 +22,7 @@ function App() {
   const currentMonth = currentLocalDate.getMonth() + 1; 
   const currentYear = currentLocalDate.getFullYear();
 
-  // 1. Sinkronisasi Data Aktivitas
+  // 1. Sinkronisasi Data Aktivitas dari Supabase dan Google Calendar
   const fetchAllActivities = useCallback(async (userObj, currentSession) => {
     if (!userObj) return;
     console.log("Token Google saat ini:", currentSession?.provider_token);
@@ -48,7 +48,7 @@ function App() {
       const providerToken = currentSession?.provider_token;
       let { data: allStaff } = await supabase.from("staff").select("email, name, campus");
       
-      // Sinkronisasi Google Calendar
+      // Sinkronisasi Google Calendar jika token tersedia
       if (providerToken && allStaff) {
         let allGCalEvents = [];
 
@@ -117,7 +117,7 @@ function App() {
     }
   }, [currentMonth, currentYear]);
 
-  // 2. Fungsi Validasi Terdaftar di Tabel Staff
+  // 2. Fungsi Validasi User Terdaftar di Tabel Staff
   const validateStaffUser = useCallback(async (email, currentSession) => {
     try {
       const { data, error } = await supabase
@@ -133,10 +133,11 @@ function App() {
         fetchStaff();
         fetchAllActivities(loggedInUser, currentSession);
 
+        // Routing awal saat berhasil masuk
         if (loggedInUser.role === "admin") {
-          setCurrentPage("all_activity");
+          setCurrentPage("dashboard"); 
         } else {
-          setCurrentPage("my_activity");
+          setCurrentPage("dashboard");
         }
       } else {
         alert("Akses ditolak. Email Google Anda belum didaftarkan oleh Admin.");
@@ -194,9 +195,9 @@ function App() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUser, session, fetchAllActivities]);
 
+  // Handler update & pemicu fetch ulang global
   const handleUpdateActivity = async (updatedAct) => {
     try {
-      // Jika dikirim objek aktivitas penuh, update teksnya
       if (updatedAct && updatedAct.id) {
         const { error } = await supabase
           .from("activities")
@@ -206,7 +207,6 @@ function App() {
         if (error) throw error;
       }
       
-      // Pemicu utama agar state activities ditarik ulang secara bersih
       if (currentUser && session) {
         fetchAllActivities(currentUser, session);
       }
@@ -291,6 +291,7 @@ function App() {
     );
   }
 
+  // LOGIKA ROUTING HALAMAN
   const renderPage = () => {
     const filteredActivities = activities.filter(act => {
       if (!act.activity_date) return false;
@@ -299,7 +300,7 @@ function App() {
     });
 
     switch (currentPage) {
-      // 🌟 PERBAIKAN: Alirkan data activities dan handleUpdateActivity ke Dashboard via Props
+      // 🌟 SEKARANG ALIRKAN PROPS KE LANDING DASHBOARD
       case "dashboard": 
         return (
           <Dashboard 
@@ -309,20 +310,52 @@ function App() {
             onUpdateActivity={handleUpdateActivity} 
           />
         );
-        
-      case "all_activity": return <AllActivity activities={filteredActivities} staffList={staffList} onUpdateActivity={handleUpdateActivity} currentMonth={currentMonth} currentYear={currentYear} />;
-      case "my_activity": return <MyActivity activities={filteredActivities} selectedStaff={currentUser.name} currentMonth={currentMonth} currentYear={currentYear} onOpenAddModal={() => setIsModalOpen(true)} />;
-      case "admin_panel": return currentUser.role === 'admin' ? <AdminPanel /> : <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} activities={filteredActivities} onUpdateActivity={handleUpdateActivity} />;
+
+      case "all_activity": 
+        return (
+          <AllActivity 
+            activities={filteredActivities} 
+            staffList={staffList} 
+            onUpdateActivity={handleUpdateActivity} 
+            currentMonth={currentMonth} 
+            currentYear={currentYear} 
+          />
+        );
+
+      // 🌟 SEKARANG MENGALIRKAN EMAIL DI SELECTEDSTAFF & SALURKAN HANDLER UPDATE
+      case "my_activity": 
+        return (
+          <MyActivity 
+            activities={filteredActivities} 
+            selectedStaff={currentUser.email} 
+            currentMonth={currentMonth} 
+            currentYear={currentYear} 
+            onOpenAddModal={() => setIsModalOpen(true)} 
+            onUpdateActivity={handleUpdateActivity}
+          />
+        );
+
+      case "admin_panel": 
+        return currentUser.role === 'admin' ? <AdminPanel /> : <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} />;
       
-      // 🌟 BARU: Menambahkan Router Case untuk Halaman Catatan (Notes)
-      case "notes": return <NotesCalendar />;
+      // 🌟 SEKARANG ALIRKAN PROPS KE NOTES CALENDAR
+      case "notes": 
+        return <NotesCalendar currentUser={currentUser} />;
       
-      default: return <Dashboard setCurrentPage={setCurrentPage} currentUser={currentUser} activities={filteredActivities} onUpdateActivity={handleUpdateActivity} />;
+      default: 
+        return (
+          <Dashboard 
+            setCurrentPage={setCurrentPage} 
+            currentUser={currentUser} 
+            activities={filteredActivities} 
+            onUpdateActivity={handleUpdateActivity} 
+          />
+        );
     }
   };
 
   return (
-    <div style={{ minHeight: "100vh", paddingBottom: "50px" }}>
+    <div style={{ minHeight: "100vh", paddingBottom: "50px", fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif" }}>
       <Navbar 
         currentPage={currentPage} setCurrentPage={setCurrentPage} 
         selectedStaff={selectedStaff} setSelectedStaff={setSelectedStaff} 

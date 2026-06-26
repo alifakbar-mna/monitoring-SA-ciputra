@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { supabase } from "../supabase";
 
 export default function MyActivity({ activities = [], selectedStaff, currentMonth, currentYear, onOpenAddModal, onUpdateActivity }) {
@@ -8,11 +8,11 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [targetDate, setTargetDate] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // State Fitur Assign To (Menyimpan Nama Staff & Email Hasil Pilihan Dropdown)
+  // State Fitur Assign To
   const [assignType, setAssignType] = useState("self"); 
   const [targetStaffEmail, setTargetStaffEmail] = useState(""); 
   
-  // State untuk menampung daftar staff dari database
+  // State menampung daftar staff dari database
   const [dbStaffList, setDbStaffList] = useState([]);
 
   // State Manajemen Aksi Edit & Delete Modal
@@ -23,41 +23,39 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   const [dateFilterType, setDateFilterType] = useState("Semua"); 
   const [customStartDate, setCustomStartDate] = useState("");
 
-  // 1. Mengambil seluruh data staff dari table 'staff' di Supabase
-  const fetchStaffList = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from("staff")
-        .select("name, email");
-      
-      if (error) throw error;
-      if (data) setDbStaffList(data);
-    } catch (err) {
-      console.error("Gagal mengambil data staff:", err.message);
-    }
+  /**
+   * 📜 1. Mengambil seluruh data staff dari table 'staff' di Supabase
+   */
+  useEffect(() => {
+    const fetchStaffList = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("staff")
+          .select("name, email");
+        
+        if (error) throw error;
+        if (data) setDbStaffList(data);
+      } catch (err) {
+        console.error("Gagal mengambil data staff:", err.message);
+      }
+    };
+
+    fetchStaffList();
   }, []);
 
+  /**
+   * 🌟 2. REAL-TIME LISTENER: Otomatis mendengarkan perubahan tabel activities
+   */
   useEffect(() => {
-    fetchStaffList();
-  }, [fetchStaffList]);
-
-  // Pastikan kamu sesuaikan nama fungsi pengambil data Board kamu (misal: fetchBoardData atau fetchActivities)
-  useEffect(() => {
-    // Ambil data pertama kali saat halaman dibuka
-    if (typeof fetchBoardData === "function") {
-      fetchBoardData();
-    }
-
-    // Set up Listener Realtime untuk mendengarkan perubahan checklist/kartu
     const channel = supabase
-      .channel("public:activities-board")
+      .channel("public:activities-myactivity-realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "activities" },
         (payload) => {
-          console.log("Ada perubahan di Board!", payload);
-          if (typeof fetchBoardData === "function") {
-            fetchBoardData(); // Paksa component untuk re-render dengan data baru
+          console.log("Realtime MyActivity: Ada perubahan data!", payload);
+          if (typeof onUpdateActivity === "function") {
+            onUpdateActivity(); // Tarik data teranyar ke App.jsx secara instan
           }
         }
       )
@@ -66,46 +64,70 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchBoardData]); // Jalankan ulang jika fungsi fetch berubah
+  }, [onUpdateActivity]);
 
-  // JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri)
+  /**
+   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri)
+   */
   const currentStaffName = useMemo(() => {
     if (!selectedStaff) return "";
+    
     const safeStaffList = Array.isArray(dbStaffList) ? dbStaffList : [];
-    const foundStaff = safeStaffList.find((s) => s && s.email === selectedStaff);
+    const foundStaff = safeStaffList.find(
+      (s) => s && typeof s === "object" && s.email === selectedStaff
+    );
 
-    if (foundStaff && foundStaff.name) return foundStaff.name;
+    if (foundStaff && foundStaff.name) {
+      return foundStaff.name;
+    }
+    
     return selectedStaff.includes("@") ? selectedStaff.split("@")[0] : selectedStaff;
   }, [selectedStaff, dbStaffList]);
 
-  // JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain)
+  /**
+   * 🔍 JALUR RESOLUSI EMAIL KE NAMA STAFF (Orang Lain)
+   */
   const targetStaffName = useMemo(() => {
     const cleanedEmail = targetStaffEmail.trim().toLowerCase();
     if (!cleanedEmail) return null;
-    const safeStaffList = Array.isArray(dbStaffList) ? dbStaffList : [];
-    const foundStaff = safeStaffList.find((s) => s && s.email?.toLowerCase() === cleanedEmail);
 
-    if (foundStaff && foundStaff.name) return foundStaff.name;
+    const safeStaffList = Array.isArray(dbStaffList) ? dbStaffList : [];
+    const foundStaff = safeStaffList.find((s) => {
+      if (!s) return false;
+      return s.email?.toLowerCase() === cleanedEmail;
+    });
+
+    if (foundStaff && foundStaff.name) {
+      return foundStaff.name;
+    }
+
     return null;
   }, [targetStaffEmail, dbStaffList]);
 
-  // LOGIKA PENYARINGAN DATA AKTIVITAS
+
+  // LOGIKA PENYARINGAN DATA AKTIVITAS (Menggunakan Case-Insensitive Matching)
   const filteredActivities = useMemo(() => {
     const todayObj = new Date();
     const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
     const safeActivities = Array.isArray(activities) ? activities : [];
 
+    const myNameLower = currentStaffName?.toLowerCase().trim();
+
     return safeActivities
       .filter(act => {
-        // Toleransi filter: Jika pemetaan nama belum selesai, gunakan pencocokan email awal untuk fallback
-        const emailFallback = selectedStaff && selectedStaff.includes("@") ? selectedStaff.split("@")[0] : "";
-        const isAssignedToMe = act.staff_name === currentStaffName || (act.staff_name && act.staff_name.toLowerCase() === emailFallback.toLowerCase());
-        const isAssignedByMe = act.description && (act.description.includes(`Ditugaskan oleh ${currentStaffName}`) || act.description.includes(`Ditugaskan oleh ${emailFallback}`));
+        const actStaffLower = act.staff_name?.toLowerCase().trim();
+        const isAssignedToMe = actStaffLower === myNameLower;
+        const isAssignedByMe = act.description && act.description.includes(`Ditugaskan oleh ${currentStaffName}`);
 
-        if (!isAssignedToMe && !isAssignedByMe) return false;
+        if (!isAssignedToMe && !isAssignedByMe) {
+          return false;
+        }
         
-        if (dateFilterType === "Hari Ini") return act.activity_date === todayStr;
-        if (dateFilterType === "Kustom" && customStartDate) return act.activity_date >= customStartDate;
+        if (dateFilterType === "Hari Ini") {
+          return act.activity_date === todayStr;
+        } else if (dateFilterType === "Kustom" && customStartDate) {
+          return act.activity_date >= customStartDate;
+        }
         
         return true; 
       })
@@ -115,7 +137,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         }
         return (a.activity_date || "") > (b.activity_date || "") ? 1 : -1;
       });
-  }, [activities, currentStaffName, selectedStaff, dateFilterType, customStartDate]);
+  }, [activities, currentStaffName, dateFilterType, customStartDate]);
 
   const formatTime = (timeStr) => {
     if (!timeStr || !timeStr.includes(":")) return timeStr || "";
@@ -127,6 +149,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
 
   const handleToggleCardComplete = async (activityId, currentStatus) => {
     const nextStatus = !currentStatus;
+
     const { error } = await supabase
       .from("activities")
       .update({ is_completed: nextStatus })
@@ -135,13 +158,18 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     if (!error) {
       if (onUpdateActivity) onUpdateActivity(); 
     } else {
-      console.error("Gagal merubah status card:", error);
+      console.error("Gagal mengubah status card:", error);
+      alert("Koneksi gagal. Gagal memperbarui status ke database.");
     }
   };
 
   const handleDeleteActivity = async (id) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus tugas manual ini?")) {
-      const { error } = await supabase.from("activities").delete().eq("id", id);
+      const { error } = await supabase
+        .from("activities")
+        .delete()
+        .eq("id", id);
+
       if (!error) {
         alert("Tugas manual berhasil dihapus.");
         if (onUpdateActivity) onUpdateActivity();
@@ -176,6 +204,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     }
   };
 
+  // LOGIKA KIRIM TUGAS GEMINI AI
   const handleSendAiMessage = async () => {
     if (!inputMessage.trim()) return;
     if (!targetDate) return alert("Pilih tanggal target kegiatan terlebih dahulu di panel AI!");
@@ -184,8 +213,14 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     
     if (assignType === "other") {
       const cleanedEmail = targetStaffEmail.trim().toLowerCase();
-      if (!cleanedEmail) return alert("Silakan pilih staff tujuan terlebih dahulu!");
-      if (!targetStaffName) return alert("❌ Staff tidak ditemukan! Silakan periksa kembali pilihan Anda.");
+      if (!cleanedEmail) {
+        return alert("Silakan pilih staff tujuan terlebih dahulu!");
+      }
+
+      if (!targetStaffName) {
+        return alert("❌ Staff tidak ditemukan! Silakan periksa kembali pilihan Anda.");
+      }
+
       finalAssignee = targetStaffName;
     }
 
@@ -259,7 +294,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
   };
 
   return (
-    <div style={{ padding: "20px 40px" }}>
+    <div style={{ padding: "20px 40px", fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif" }}>
       <style>{`
         .filter-btn { padding: 6px 14px; border-radius: 8px; border: 1px solid #d2d2d7; background: #fff; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s ease; }
         .filter-btn.active { background: #0071e3; color: #fff; border-color: #0071e3; }
@@ -379,7 +414,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
         {/* LIST CARD TUGAS */}
         <div style={{ flex: "2 1 500px" }}>
           {filteredActivities.length === 0 ? (
-            <div className="glass-panel" style={{ padding: "40px", textAlign: "center", color: "var(--apple-text-sub)", backgroundColor: "#fff", borderRadius: "14px" }}>Tidak ada data aktivitas yang sesuai dengan filter filter tanggal ini.</div>
+            <div className="glass-panel" style={{ padding: "40px", textAlign: "center", color: "var(--apple-text-sub)", backgroundColor: "#fff", borderRadius: "14px" }}>Tidak ada data aktivitas yang sesuai dengan filter tanggal ini.</div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "20px" }}>
               {filteredActivities.map(act => (
@@ -398,7 +433,8 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
                     )}
                   </div>
 
-                  {act.staff_name !== currentStaffName && (
+                  {/* Label Visual Indikator Delegasi */}
+                  {act.staff_name?.toLowerCase().trim() !== currentStaffName?.toLowerCase().trim() && (
                     <div style={{ backgroundColor: "#f2f7ff", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", color: "#0071e3", marginBottom: "8px", fontWeight: "600", display: "inline-block" }}>
                       👤 Ditugaskan ke: {act.staff_name}
                     </div>
