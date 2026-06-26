@@ -196,13 +196,20 @@ function App() {
 
   const handleUpdateActivity = async (updatedAct) => {
     try {
-      const { error } = await supabase
-        .from("activities")
-        .update({ title: updatedAct.title, description: updatedAct.description })
-        .eq("id", updatedAct.id);
+      // Jika dikirim objek aktivitas penuh, update teksnya
+      if (updatedAct && updatedAct.id) {
+        const { error } = await supabase
+          .from("activities")
+          .update({ title: updatedAct.title, description: updatedAct.description })
+          .eq("id", updatedAct.id);
 
-      if (error) throw error;
-      setActivities(prev => prev.map(act => act.id === updatedAct.id ? { ...act, ...updatedAct } : act));
+        if (error) throw error;
+      }
+      
+      // Pemicu utama agar state activities ditarik ulang secara bersih
+      if (currentUser && session) {
+        fetchAllActivities(currentUser, session);
+      }
     } catch (err) {
       console.error(err);
     }

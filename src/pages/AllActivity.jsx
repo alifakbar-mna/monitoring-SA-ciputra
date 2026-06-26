@@ -105,20 +105,18 @@ export default function AllActivity({ activities, staffList, onUpdateActivity, c
     e.stopPropagation(); 
     const nextStatus = !currentStatus;
 
-    const targetActivity = activities.find(a => a.id === activityId);
-    if (targetActivity) {
-      targetActivity.is_completed = nextStatus;
-    }
-
+    // 1. Langsung tembak pembaruan ke database Supabase
     const { error } = await supabase
       .from("activities")
       .update({ is_completed: nextStatus })
       .eq("id", activityId);
 
     if (!error) {
-      if (onUpdateActivity) onUpdateActivity();
+      // 2. JIKA BERHASIL: Panggil fungsi dari App.jsx untuk memicu penarikan data baru
+      if (onUpdateActivity) {
+        onUpdateActivity(); 
+      }
     } else {
-      if (targetActivity) targetActivity.is_completed = currentStatus;
       console.error("Gagal memperbarui status tugas:", error);
       alert("Koneksi gagal. Gagal memperbarui status ke database.");
     }
