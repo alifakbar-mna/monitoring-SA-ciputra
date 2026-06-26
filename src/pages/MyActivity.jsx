@@ -41,16 +41,24 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     fetchStaffList();
   }, [fetchStaffList]);
 
-  // 🌟 LOGIKA REAL-TIME TAMBAHAN: Langsung dengarkan perubahan tabel activities dari halaman ini
+  // Pastikan kamu sesuaikan nama fungsi pengambil data Board kamu (misal: fetchBoardData atau fetchActivities)
   useEffect(() => {
+    // Ambil data pertama kali saat halaman dibuka
+    if (typeof fetchBoardData === "function") {
+      fetchBoardData();
+    }
+
+    // Set up Listener Realtime untuk mendengarkan perubahan checklist/kartu
     const channel = supabase
-      .channel("public:activities-myactivity")
+      .channel("public:activities-board")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "activities" },
-        () => {
-          console.log("Database aktivitas berubah! Memicu update global...");
-          if (onUpdateActivity) onUpdateActivity();
+        (payload) => {
+          console.log("Ada perubahan di Board!", payload);
+          if (typeof fetchBoardData === "function") {
+            fetchBoardData(); // Paksa component untuk re-render dengan data baru
+          }
         }
       )
       .subscribe();
@@ -58,7 +66,7 @@ export default function MyActivity({ activities = [], selectedStaff, currentMont
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [onUpdateActivity]);
+  }, [fetchBoardData]); // Jalankan ulang jika fungsi fetch berubah
 
   // JALUR RESOLUSI EMAIL KE NAMA STAFF (Diri Sendiri)
   const currentStaffName = useMemo(() => {
